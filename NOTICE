@@ -1,0 +1,25 @@
+CitOmni Documentation
+Copyright (c) 2012–present Lars Grove Mortensen
+Licensed under the Creative Commons Attribution-ShareAlike 4.0 International License (see LICENSE).
+
+------------------------------------------------------------
+Trademark Notice
+------------------------------------------------------------
+"CitOmni" and the CitOmni logo are trademarks of Lars Grove Mortensen.
+Trademark rights are separate from copyright.
+
+You may refer to “CitOmni” in documentation, articles, or compatible
+software guides provided that:
+ - the use is descriptive and does not imply sponsorship or endorsement,
+ - you do not modify or combine the CitOmni logo with your own marks,
+ - you do not present your work as “official”, “certified”, or “endorsed”
+   by the CitOmni project unless such status has been formally granted,
+ - you do not register or use “citomni” (or confusingly similar) in company,
+   domain, or repository names without prior written permission.
+
+This notice clarifies trademark usage and does not alter the
+Creative Commons license of the documentation.
+
+Official CitOmni framework packages published by the CitOmni project
+are generally licensed under the MIT License, while certain proprietary
+or client-specific extensions may be licensed separately.
