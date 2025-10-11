@@ -48,8 +48,12 @@ This repository hosts the public documentation for the CitOmni Framework.
 ### release-notes
 - [release-notes/README.md](./release-notes/README.md)
 
+### reports
+- [reports/2025-10-02-capacity-and-green-by-design.md](./reports/2025-10-02-capacity-and-green-by-design.md)
+
 ### troubleshooting
 - [troubleshooting/providers-autoload.md](./troubleshooting/providers-autoload.md)
+- [troubleshooting/providers-autoload_dk.md](./troubleshooting/providers-autoload_dk.md)
 - [troubleshooting/README.md](./troubleshooting/README.md)
 
 ## Expected structure (reference)
@@ -123,7 +127,7 @@ Below is the planned layout. Some sections may be empty while we migrate content
 
 ---
 _This README was generated automatically._  
-_Last updated: 2025-10-11 18:56:35_
+_Last updated: 2025-10-11 21:40:03_
 
 <!-- AUTO-INDEX:BEGIN -->
 
@@ -133,6 +137,7 @@ _Last updated: 2025-10-11 18:56:35_
 - **contribute/** → [README](./contribute/README.md)
 - **how-to/** → [README](./how-to/README.md)
 - **policies/** → [README](./policies/README.md)
+- **reports/** → [README](./reports/README.md)
 - **troubleshooting/** → [README](./troubleshooting/README.md)
 
 <!-- AUTO-INDEX:END -->

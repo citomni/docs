@@ -1,4 +1,4 @@
-# troubleshooting
+# reports
 
 _Section landing page._
 
@@ -8,7 +8,6 @@ _Section landing page._
 
 ## Index
 
-- [Providers autoload](./providers-autoload.md)
-- [Providers autoload dk](./providers-autoload_dk.md)
+- [2025 10 02 capacity and green by design](./2025-10-02-capacity-and-green-by-design.md)
 
 <!-- AUTO-INDEX:END -->
