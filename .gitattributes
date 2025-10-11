@@ -1,0 +1,50 @@
+# --- Normalize text files to LF on checkout (unless overridden below)
+*           text=auto eol=lf
+
+# Markdown & common text formats (force LF)
+*.md        text eol=lf
+*.markdown  text eol=lf
+*.txt       text eol=lf
+*.rst       text eol=lf
+*.adoc      text eol=lf
+
+# Config & data (force LF)
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.json      text eol=lf
+*.toml      text eol=lf
+*.ini       text eol=lf
+
+# Shell scripts (force LF)
+*.sh        text eol=lf
+
+# Windows scripts (force CRLF)
+*.bat       text eol=crlf
+*.cmd       text eol=crlf
+*.ps1       text eol=crlf
+
+# Code samples (if any) — keep LF
+*.php       text eol=lf
+*.js        text eol=lf
+*.ts        text eol=lf
+*.css       text eol=lf
+*.scss      text eol=lf
+*.html      text eol=lf
+
+# Binary assets (no diff/merge)
+*.png       binary -diff
+*.jpg       binary -diff
+*.jpeg      binary -diff
+*.gif       binary -diff
+*.webp      binary -diff
+*.svg       text eol=lf     # SVG er tekst; behold diff (LF)
+*.ico       binary -diff
+*.pdf       binary -diff
+*.zip       binary -diff
+*.gz        binary -diff
+
+# Treat everything under /docs as documentation for GitHub Linguist
+docs/**     linguist-documentation=true
+
+# Optional: exclude CI artifacts from archive exports
+site/**     export-ignore
