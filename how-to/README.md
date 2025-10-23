@@ -8,6 +8,7 @@ _Section landing page._
 
 ## Index
 
-- [Build a provider](./build-a-provider.md)
+- [Providers build a provider](./providers-build-a-provider.md)
+- [Services authoring registration usage](./services-authoring-registration-usage.md)
 
 <!-- AUTO-INDEX:END -->

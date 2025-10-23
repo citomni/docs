@@ -209,14 +209,17 @@ Copy these into your code. Adjust parameter/return/throws as needed.
  * - <Caveats, performance, determinism, environment assumptions>
  *
  * Typical usage:
- *   <Short in-context invocation, one-liner or two lines>
+ *   <When this method is expected to run / be called>.
  *
  * Examples:
- *   
- *   <Concise example showing correct usage with $this->app and expected result>
- *   
+ *
+ *   // <Happy path in ≤ 6 lines>
+ *   <mini-snippet or narrative, not both>
+ *
  *   <Additional examples: Showing options/edge behavior>
  *
+ * Failure:
+ * - <How failure is exposed or contained>.
  *
  * @param <type> $<name> <Meaning, constraints (e.g., non-empty, absolute path)>.
  * @param <type> $<name> <...>

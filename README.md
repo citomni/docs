@@ -6,6 +6,9 @@ This repository hosts the public documentation for the CitOmni Framework.
 
 ## Available docs (auto-generated)
 
+### (root)
+- [CONVENTIONS.md](./CONVENTIONS.md)
+
 ### concepts
 - [concepts/app-structure.md](./concepts/app-structure.md)
 - [concepts/maintenance-mode.md](./concepts/maintenance-mode.md)
@@ -26,8 +29,9 @@ This repository hosts the public documentation for the CitOmni Framework.
 - [get-started/README.md](./get-started/README.md)
 
 ### how-to
-- [how-to/build-a-provider.md](./how-to/build-a-provider.md)
+- [how-to/providers-build-a-provider.md](./how-to/providers-build-a-provider.md)
 - [how-to/README.md](./how-to/README.md)
+- [how-to/services-authoring-registration-usage.md](./how-to/services-authoring-registration-usage.md)
 
 ### legal
 - [legal/README.md](./legal/README.md)
@@ -50,6 +54,7 @@ This repository hosts the public documentation for the CitOmni Framework.
 
 ### reports
 - [reports/2025-10-02-capacity-and-green-by-design.md](./reports/2025-10-02-capacity-and-green-by-design.md)
+- [reports/README.md](./reports/README.md)
 
 ### troubleshooting
 - [troubleshooting/providers-autoload.md](./troubleshooting/providers-autoload.md)
@@ -127,12 +132,13 @@ Below is the planned layout. Some sections may be empty while we migrate content
 
 ---
 _This README was generated automatically._  
-_Last updated: 2025-10-11 21:40:03_
+_Last updated: 2025-10-23 17:02:47_
 
 <!-- AUTO-INDEX:BEGIN -->
 
 ## Index
 
+- [CONVENTIONS](./CONVENTIONS.md)
 - **concepts/** → [README](./concepts/README.md)
 - **contribute/** → [README](./contribute/README.md)
 - **how-to/** → [README](./how-to/README.md)
