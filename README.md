@@ -6,20 +6,17 @@ This repository hosts the public documentation for the CitOmni Framework.
 
 ## Available docs (auto-generated)
 
-### (root)
-- [CONVENTIONS.md](./CONVENTIONS.md)
-
 ### concepts
+- [concepts/README.md](./concepts/README.md)
 - [concepts/app-structure.md](./concepts/app-structure.md)
 - [concepts/maintenance-mode.md](./concepts/maintenance-mode.md)
 - [concepts/maintenance-mode_dk.md](./concepts/maintenance-mode_dk.md)
-- [concepts/README.md](./concepts/README.md)
 - [concepts/runtime-modes.md](./concepts/runtime-modes.md)
 - [concepts/services-and-providers.md](./concepts/services-and-providers.md)
 
 ### contribute
-- [contribute/CONVENTIONS.md](./contribute/CONVENTIONS.md)
 - [contribute/README.md](./contribute/README.md)
+- [contribute/CONVENTIONS.md](./contribute/CONVENTIONS.md)
 - [contribute/testing-guide.md](./contribute/testing-guide.md)
 
 ### cookbook
@@ -29,8 +26,8 @@ This repository hosts the public documentation for the CitOmni Framework.
 - [get-started/README.md](./get-started/README.md)
 
 ### how-to
-- [how-to/providers-build-a-provider.md](./how-to/providers-build-a-provider.md)
 - [how-to/README.md](./how-to/README.md)
+- [how-to/providers-build-a-provider.md](./how-to/providers-build-a-provider.md)
 - [how-to/services-authoring-registration-usage.md](./how-to/services-authoring-registration-usage.md)
 
 ### legal
@@ -40,8 +37,8 @@ This repository hosts the public documentation for the CitOmni Framework.
 - [packages/README.md](./packages/README.md)
 
 ### policies
-- [policies/public-uploads.md](./policies/public-uploads.md)
 - [policies/README.md](./policies/README.md)
+- [policies/public-uploads.md](./policies/public-uploads.md)
 
 ### programs
 - [programs/README.md](./programs/README.md)
@@ -53,13 +50,13 @@ This repository hosts the public documentation for the CitOmni Framework.
 - [release-notes/README.md](./release-notes/README.md)
 
 ### reports
-- [reports/2025-10-02-capacity-and-green-by-design.md](./reports/2025-10-02-capacity-and-green-by-design.md)
 - [reports/README.md](./reports/README.md)
+- [reports/2025-10-02-capacity-and-green-by-design.md](./reports/2025-10-02-capacity-and-green-by-design.md)
 
 ### troubleshooting
+- [troubleshooting/README.md](./troubleshooting/README.md)
 - [troubleshooting/providers-autoload.md](./troubleshooting/providers-autoload.md)
 - [troubleshooting/providers-autoload_dk.md](./troubleshooting/providers-autoload_dk.md)
-- [troubleshooting/README.md](./troubleshooting/README.md)
 
 ## Expected structure (reference)
 
@@ -132,7 +129,7 @@ Below is the planned layout. Some sections may be empty while we migrate content
 
 ---
 _This README was generated automatically._  
-_Last updated: 2025-10-23 17:02:47_
+_Last updated: 2025-10-23 17:53:05_
 
 <!-- AUTO-INDEX:BEGIN -->
 

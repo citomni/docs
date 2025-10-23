@@ -212,7 +212,7 @@ function generateRootReadme(string $root): void {
 		$abs = normPath($f->getPathname());
 		$rel = relFromRoot($abs, $root);
 
-		if (strcasecmp($rel, 'README.md') === 0) {
+		if (strcasecmp($rel, 'README.md') === 0 || strcasecmp($rel, 'CONVENTIONS.md') === 0) {
 			continue;
 		}
 		if (isExcludedPath($abs)) {
@@ -225,13 +225,38 @@ function generateRootReadme(string $root): void {
 		$count++;
 	}
 
+	/**
+	 * Move the section's own README.md to the first position (if present).
+	 * Example: "concepts/README.md" goes first under group "concepts".
+	 */
+	function promoteSectionReadme(string $group, array $list): array {
+		// Root group never shows root README.md (already handled elsewhere).
+		if ($group === '(root)') {
+			return array_values($list);
+		}
+
+		$want = $group . '/README.md';
+		$head = [];
+		$tail = [];
+
+		foreach ($list as $rel) {
+			if (strcasecmp($rel, $want) === 0) {
+				$head[] = $rel;
+			} else {
+				$tail[] = $rel;
+			}
+		}
+		return array_values(array_merge($head, $tail));
+	}
+
 	// Sort
 	uksort($groups, static fn(string $a, string $b): int => strnatcasecmp($a, $b));
-	foreach ($groups as &$list) {
+	foreach ($groups as $g => &$list) {
 		natcasesort($list);
-		$list = array_values($list);
+		$list = promoteSectionReadme($g, array_values($list));
 	}
 	unset($list);
+	
 
 	$now = date('Y-m-d H:i:s');
 	$lines = [];
