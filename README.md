@@ -46,6 +46,7 @@ This repository hosts the public documentation for the CitOmni Framework.
 
 ### reference
 - [reference/README.md](./reference/README.md)
+- [reference/flash-service.md](./reference/flash-service.md)
 
 ### release-notes
 - [release-notes/README.md](./release-notes/README.md)
@@ -130,4 +131,4 @@ Below is the planned layout. Some sections may be empty while we migrate content
 
 ---
 _This README was generated automatically._  
-_Last updated: 2025-10-28 12:47:12_
+_Last updated: 2025-10-28 21:40:22_
