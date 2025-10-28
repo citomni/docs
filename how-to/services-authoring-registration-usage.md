@@ -319,7 +319,6 @@ use CitOmni\Kernel\Service\BaseService;
  * Typical usage:
  *   <When this service class is expected to be called>.
  *
- * @throws <\Fully\Qualified\Exception> <When and why this is thrown>.
  */
 final class <ServiceName> extends BaseService {
 	/** @var <type> <Short meaning> */

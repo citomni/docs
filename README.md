@@ -29,6 +29,7 @@ This repository hosts the public documentation for the CitOmni Framework.
 - [how-to/README.md](./how-to/README.md)
 - [how-to/providers-build-a-provider.md](./how-to/providers-build-a-provider.md)
 - [how-to/services-authoring-registration-usage.md](./how-to/services-authoring-registration-usage.md)
+- [how-to/vars_providers-auto-injecting-template-variables.md](./how-to/vars_providers-auto-injecting-template-variables.md)
 
 ### legal
 - [legal/README.md](./legal/README.md)
@@ -129,18 +130,4 @@ Below is the planned layout. Some sections may be empty while we migrate content
 
 ---
 _This README was generated automatically._  
-_Last updated: 2025-10-23 17:53:05_
-
-<!-- AUTO-INDEX:BEGIN -->
-
-## Index
-
-- [CONVENTIONS](./CONVENTIONS.md)
-- **concepts/** → [README](./concepts/README.md)
-- **contribute/** → [README](./contribute/README.md)
-- **how-to/** → [README](./how-to/README.md)
-- **policies/** → [README](./policies/README.md)
-- **reports/** → [README](./reports/README.md)
-- **troubleshooting/** → [README](./troubleshooting/README.md)
-
-<!-- AUTO-INDEX:END -->
+_Last updated: 2025-10-28 12:47:12_

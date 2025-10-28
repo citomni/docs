@@ -10,5 +10,6 @@ _Section landing page._
 
 - [Providers build a provider](./providers-build-a-provider.md)
 - [Services authoring registration usage](./services-authoring-registration-usage.md)
+- [Vars providers auto injecting template variables](./vars_providers-auto-injecting-template-variables.md)
 
 <!-- AUTO-INDEX:END -->
