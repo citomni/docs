@@ -36,7 +36,7 @@ The Router instantiates controllers directly based on route definitions:
 ```php
 $controller = new $controllerClass($app, $routeConfig);
 $controller->$action(...$params);
-````
+```
 
 ---
 
@@ -298,7 +298,7 @@ final class AdminController extends AdminBaseController {
 		]);
 	}
 }
-````
+```
 
 **Stricter policies (optional)**
 

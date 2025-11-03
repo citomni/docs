@@ -155,7 +155,7 @@ public const MAP_CLI  = [ /* service ids -> classes */ ];
 
 public const ROUTES_HTTP = [ /* route definitions */ ];
 public const ROUTES_CLI  = [ /* CLI routing (if used) */ ];
-````
+```
 
 These are read directly by `App::buildConfig()`, `App::buildRoutes()`, and `App::buildServices()`.
 
@@ -276,7 +276,7 @@ final class Routes {
 		],
 	];
 }
-````
+```
 
 These baseline maps together define the **minimum viable runtime** for the given mode.
 All further additions-providers, extensions, or applications-layer deterministically on top of them.

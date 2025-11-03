@@ -115,7 +115,7 @@ For API-style access: Mirror the same actions with `.json`:
 /admin/{entity}-update.json      (POST; body: id+fields)
 /admin/{entity}-delete.json      (POST; body: id(s))
 
-````
+```
 
 These endpoints are suitable for JavaScript tables, async deletes, or dashboards needing lightweight refreshes.
 
@@ -198,7 +198,7 @@ return [
 		'methods'    => ['POST'],
 	],
 ];
-````
+```
 
 ### 5.2 Example - provider `Boot\Routes::MAP`
 

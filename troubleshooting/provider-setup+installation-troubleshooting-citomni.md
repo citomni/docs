@@ -17,7 +17,7 @@
    return [
      \Vendor\Pkg\Boot\Registry::class, // NOT "Provider\Services"
    ];
-````
+```
 
 2. **File & namespace** - Provider boot file is here and matches PSR-4:
 

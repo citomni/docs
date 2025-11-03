@@ -80,7 +80,7 @@ return [
 		'template_layer'=> 'app',
 	],
 ];
-````
+```
 
 At deploy time, the complete merged result is compiled into
 `/var/cache/routes.http.php` (or `.cli.php` for CLI mode) by `App::warmCache()`.
@@ -203,7 +203,7 @@ When an HTTP-level fault must be triggered intentionally (for example, a missing
 
 ```php
 $this->app->errorHandler->httpError($status, [...context...]);
-````
+```
 
 Typical explicit invocations from the Router include:
 

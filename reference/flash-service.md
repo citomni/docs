@@ -109,7 +109,7 @@ public function peek(string $key): string|array|null;
 public function peekAll(): array{
 	// ['msg' => array<string, string|array>, 'old' => array<string, mixed>]
 }
-````
+```
 
 ### 5.2 Old Input
 
