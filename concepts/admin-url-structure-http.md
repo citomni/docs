@@ -97,6 +97,11 @@ Action-based with query ID:
 - Compatible with HTML forms (GET/POST only).
 - Minimal router complexity: Requires no regex parsing or implicit mapping in the router.
 
+> **Note:** Admin routes follow the same suffix contract as the general HTTP layer:
+> `*.html` endpoints are **GET views** (read-only pages),
+> and routes **without a suffix** are **POST actions** (mutating requests using PRG).
+> This keeps admin routing fully aligned with CitOmni's deterministic HTTP semantics.
+
 ---
 
 ### 3.2 JSON twins (async/XHR)
@@ -131,7 +136,7 @@ These endpoints are suitable for JavaScript tables, async deletes, or dashboards
 
 ## 5. Router Configuration (current implementation)
 
-Since October 2025, CitOmni routes are defined **outside the cfg** in dedicated **route maps**.  
+Since October 2025, CitOmni routes are defined **in dedicated route maps (not part of the config tree)** in dedicated **route maps**.  
 Each layer contributes static arrays that the kernel merges deterministically.
 
 ### Merge order (HTTP mode)
@@ -169,16 +174,16 @@ return [
 		'template_layer' => 'citomni/admin',
 	],
 	'/admin/page-edit.html' => [
-		'controller'     => PageController::class,
-		'action'         => 'adminPageEditForm',  // expects ?id
-		'methods'        => ['GET'],
-		'template_file'  => 'admin/admin_page_edit.html',
-		'template_layer' => 'aserno/byportal-core',
+	  'controller'     => PageController::class,
+	  'action'         => 'adminPageEditForm',  // expects ?id
+	  'methods'        => ['GET'],
+	  'template_file'  => 'admin/admin_page_edit.html',
+	  'template_layer' => 'aserno/byportal-core',
 	],
-	'/admin/page-edit.html' => [
-		'controller' => PageController::class,
-		'action'     => 'adminPageEditPost',
-		'methods'    => ['POST'],
+	'/admin/page-edit' => [
+	  'controller' => PageController::class,
+	  'action'     => 'adminPageEditPost',
+	  'methods'    => ['POST'],
 	],
 
 	// JSON twins
@@ -203,20 +208,20 @@ declare(strict_types=1);
 
 namespace CitOmni\Admin\Boot;
 
-use CitOmni\Admin\Controller\DashboardController;
-
-final class Routes {
-	public const MAP = [
-		'/admin/home.html' => [
-			'controller'     => DashboardController::class,
-			'action'         => 'adminHome',
-			'methods'        => ['GET'],
-			'template_file'  => 'admin/admin_home.html',
-			'template_layer' => 'citomni/admin',
-		],
-	];
+final class Registry {
+  public const ROUTES_HTTP = [
+    '/admin/home.html' => [
+      'controller'     => \CitOmni\Admin\Controller\DashboardController::class,
+      'action'         => 'adminHome',
+      'methods'        => ['GET'],
+      'template_file'  => 'admin/admin_home.html',
+      'template_layer' => 'citomni/admin',
+    ],
+  ];
 }
 ```
+
+> Note: Routes are merged by path key with last-wins semantics. Do not declare the same path key twice in a single map; combine GET/POST semantics via the suffix rule (.html for GET views, no suffix for POST actions) or move one entry to a downstream layer intended to override the former.
 
 ---
 
@@ -247,17 +252,18 @@ This ensures deterministic access validation, consistent with the CitOmni framew
    All POST requests must verify a submitted token using the Security service:  
    ```php
    if (!empty($this->app->cfg->security->csrf_protection)) {
-   	$ok = $this->app->security->verifyCsrf(
-   		(string)($this->app->request->post('csrf_token') ?? '')
-   	);
-   	if (!$ok) {
-   		$this->app->security->logFailedCsrf(__METHOD__, [
-   			'path' => $this->app->request->path(),
-   			'user' => $this->app->role->currentUserId(),
-   		]);
-   		http_response_code(403);
-   		return;
-   	}
+		$ok = $this->app->security->verifyCsrf(
+			(string)($this->app->request->post($this->app->security->csrfFieldName()) ?? '')
+		);
+
+		if (!$ok) {
+			$this->app->security->logFailedCsrf(__METHOD__, [
+				'path' => $this->app->request->path(),
+				'user' => $this->app->role->currentUserId(),
+			]);
+			http_response_code(403);
+			return;
+		}
    }
 ```
 
@@ -307,7 +313,7 @@ The admin interface operates in a controlled environment, yet UX and safety rema
    Flash messages are the canonical vehicle for this communication.
 
 3. **Canonical redirects**
-   URLs must normalise automatically to their `.html` form.
+   URLs *should* normalise to their .html form (via router policy or a lightweight canonicalization middleware).
 
    * `/admin/page-edit` -> 301 -> `/admin/page-edit.html`
    * `/admin/page-edit.html/` -> 301 -> `/admin/page-edit.html`
@@ -419,5 +425,3 @@ The route subsystem is designed for **predictability and constant-time dispatch*
 
 > CitOmni's admin routing model prioritises **determinism, safety, and developer ergonomics** over architectural purism.
 > Action-based naming, explicit suffixes, and static route maps ensure transparent, cache-friendly, and maintainable execution across all environments.
-
----

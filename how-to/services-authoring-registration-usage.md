@@ -51,35 +51,47 @@ new \Your\Namespace\Service\X(\CitOmni\Kernel\App $app, array $options = [])
 
 ## 3) Where Services come from (maps & precedence)
 
-CitOmni merges **service maps** deterministically (last wins):
+CitOmni merges **service maps** deterministically using PHP's array-union semantics (**left-wins per merge step**).
+This ensures reproducible overrides without reflection or dynamic registration.
 
-1. **Vendor base map** (per mode)
+1. **Vendor baseline map** (per mode)
 
-   * HTTP: `\CitOmni\Http\Boot\Services::MAP`
-   * CLI:  `\CitOmni\Cli\Boot\Services::MAP`
+   * HTTP -> `\CitOmni\Http\Boot\Services::MAP`
+   * CLI  -> `\CitOmni\Cli\Boot\Services::MAP`
+
+   Defines the foundational services for each runtime mode (router, response, errorHandler, etc.).
 
 2. **Provider maps** (optional, merged in the order listed in `/config/providers.php`)
 
-   * Each provider may expose `Boot\Services::MAP_HTTP` / `MAP_CLI`.
+   * Each provider exposes `Boot\Registry::MAP_HTTP` and/or `MAP_CLI`.
 
-3. **App map** (optional, highest precedence)
+   During boot, the kernel iterates the provider list **in order** and performs `$map = $pvMap + $map;` for each.
+   Because PHP's array-union preserves the left-hand value on key conflicts, **later providers in the list take precedence** over earlier ones within this step (provider N is merged before provider N−1), yielding: last-listed provider > first-listed provider > vendor baseline.
 
-   * `/config/services.php` - great for **overrides** and **app-local services**.
+   The resulting map therefore reflects the deterministic hierarchy:
+   **last-listed provider > first-listed provider > vendor baseline.**
+
+3. **Application map** (optional, highest precedence)
+
+   * `/config/services.php` - used for **app-local services** or **explicit overrides**.
+
+   The kernel finally performs `$map = $appMap + $map;`, ensuring that **the application layer always wins** over all provider and vendor definitions.
+
 
 **Definition shapes**
 
 ```php
-// Simple:
+// Simple (bare class reference)
 'response' => \CitOmni\Http\Service\Response::class,
 
-// With options for the constructor's 2nd parameter:
+// With options (constructor's 2nd parameter)
 'greeter' => [
 	'class'   => \Vendor\Package\Service\Greeter::class,
-	'options' => ['suffix' => '- from Example'], // entirely optional
+	'options' => ['suffix' => '- from Example'], // optional
 ],
 ```
 
-> The `App` enforces this shape; anything else fails fast.
+> The `App` enforces this structure strictly; any malformed entry fails fast during boot.
 
 ---
 
@@ -100,7 +112,6 @@ Example reads in a Service:
 ```php
 $csrf = (bool)($this->app->cfg->security->csrf_protection ?? true);
 $tz   = (string)($this->app->cfg->locale->timezone ?? 'UTC');
-$routes = $this->app->cfg->routes; // raw array by design
 ```
 
 ---
@@ -149,7 +160,7 @@ Anything in `/config/services.php` **wins over** provider maps, which themselves
    * Builds `App` (mode: HTTP).
    * Installs global ErrorHandler.
    * Sets timezone/charset.
-   * Derives `CITOMNI_PUBLIC_ROOT_URL`, applies trusted proxies.
+   * Derives `CITOMNI_PUBLIC_ROOT_URL`, and applies trusted proxies.
 
 2. **Guard & route** (`Http\Kernel::run()`)
 
@@ -415,6 +426,8 @@ These Services still **conform** to the same constructor contract and map semant
 
   * `var/cache/cfg.{http|cli}.php`
   * `var/cache/services.{http|cli}.php`
+  * Note: Route caches are built by the routes builder and are orthogonal to service caches; Services do not need to touch them.
+
 * In production with `opcache.validate_timestamps=0`, invalidate per file or call `opcache_reset()` post-deploy.
 
 ---
@@ -451,8 +464,8 @@ A: Use a provider map when the Service belongs to a **reusable package**. Use `/
 **Q: Can I pass secrets via service options?**
 A: Prefer **config + secrets files** (e.g., `/var/secrets/*.php` referenced in config). Options are fine for **non-sensitive wiring** only.
 
-**Q: Why is `$this->app->cfg->routes` a raw array?**
-A: It is intentionally left raw to avoid wrapper overhead and to match the Router's low-cost access patterns.
+**Q: How do Services relate to routes?**
+A: Routes are compiled by a dedicated builder into their own cache (per mode) and consumed by the Router. Services should not read routes from config; they typically don't need route data at all. If you truly must inspect routing, do it via a narrow, explicit API you own-never by poking into internal route maps.
 
 ---
 

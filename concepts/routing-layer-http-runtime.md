@@ -63,6 +63,8 @@ Merge semantics follow CitOmni's global "**last-wins**" rule:
 - Numeric arrays are replaced wholesale.
 - Empty arrays still count as valid overrides.
 
+> Within the provider step, order in /config/providers.php also follows last-wins: routes from later providers overwrite identical path keys from earlier providers.
+
 ### 3.2 Purity and Caching
 
 Each route layer is pure PHP returning an array:
@@ -102,7 +104,8 @@ Each of these sources is optional except the vendor baseline; the kernel automat
 ## 5. Route Definition Structure
 
 Every route definition is a flat associative array keyed by the public path.
-Keys are literal strings representing the URL pattern or a special group (`regex`, `403`, `404`, etc.).
+Keys are literal strings representing the URL path, or the special group regex for parameterized routes.
+(Error routes are not best practice in CitOmni; faults should be delegated to the global ErrorHandler.)
 
 ### 5.1 Standard Route Keys
 
@@ -251,6 +254,8 @@ $controllerInstance = new $controller($this->app, [
 * If `$action` does not exist, a 500 "action_missing" is raised immediately.
 * The router does not catch exceptions; they propagate to the global error handler.
 
+> Note: init() is auto-invoked only when the controller extends CitOmni\Kernel\Controller\BaseController.
+
 ---
 
 ## 10. Caching and Performance
@@ -277,7 +282,7 @@ The runtime performs **zero file I/O** during route lookup when caches are warm.
 4. **Environment overlays:** Use `/citomni_http_routes.stage.php` for staging variations instead of `if (ENV) ...` in code.
 5. **Keep it deterministic:** Never modify `$app->routes` at runtime.
 6. **Use `App::warmCache()` after route changes** to maintain atomic caches.
-7. **Error delegation:** Never define "error routes." Always delegate faults through `$this->app->errorHandler->httpError(...)` from the Router or controller level.
+7. **Error delegation:** Never define or rely on "error routes" (e.g., `/404`). All faults must bubble to the global **ErrorHandler** instead, using `$this->app->errorHandler->httpError(...)` from the Router or controller level.
 8. **Green performance:** Do not build or merge routes dynamically; the router should execute in ≤0.001 s.
 
 ---

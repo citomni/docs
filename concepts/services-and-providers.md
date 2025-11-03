@@ -69,6 +69,19 @@ Mechanics:
 - Associative arrays are merged recursively (**last-wins**).
 - List arrays (PHP "lists") are **replaced** (not concatenated).
 
+### 3.1b Routes Merge (path-keyed, last-wins)
+
+Order:
+1. **Mode baseline**:
+   - HTTP -> `\CitOmni\Http\Boot\Routes::MAP`
+   - CLI  -> `\CitOmni\Cli\Boot\Routes::MAP`
+2. **Providers list** (`/config/providers.php`) -> each provider may contribute `ROUTES_HTTP` or `ROUTES_CLI`
+3. **App base** (`/config/citomni_{http|cli}_routes.php`)
+4. **App environment overlay** (`/config/citomni_{http|cli}_routes.{ENV}.php`)
+
+Mechanics:
+- Routes are merged by **path key** with **last-wins** semantics.
+- Keep the map **associative by path**; list-style arrays are replaced wholesale downstream.
 
 ### 3.2 Service Map Merge (ID map, left-wins - deterministic override ladder)
 
@@ -259,7 +272,7 @@ final class Registry {
 
 * Keep the `Routes::MAP` array **associative by path** (e.g., `'/login.html' => [...]`), not a numeric list; this preserves path-level *last-wins* overrides.
 * Include `action` and `methods` explicitly; `.html`/`.json` suffix is part of the public contract.
-* Important: If you don't insist on keeping a separate file, you can define `ROUTES_HTTP` directly as a constant array on `Registry` (this is the prefered best practice).
+* Important: If you don't insist on keeping a separate file, you can define `ROUTES_HTTP` directly as a constant array on `Registry` (this is the preferred best practice).
 
 
 ---
@@ -341,7 +354,8 @@ Each builder operates independently and writes its own atomic cache file
 The **order** in `/config/providers.php` defines overlay precedence **among providers**:
 
 * For **configuration/routes** (last-wins): Entries from **later providers** overwrite earlier providers for the same keys/paths.
-* For **services** (left-wins per step): The **left-hand** map in each merge call prevails. The kernel unions provider maps in the listed order so that **earlier providers** take precedence over later ones *within the provider step*. The application's `/config/services.php` is applied last and thus overrides both.
+* For **services** (left-wins per step): The **left-hand** map in each merge call prevails.
+  The kernel iterates providers in list order and applies `$map = $pvMap + $map;`, which places the **current (later) provider on the left** - derfor vinder **senere providers** over tidligere i dette trin.
 
 > **Recommendation:** Place providers you want to be easily overridden by others **later** in the list for config/routes; for services, prefer documenting stable IDs and rely on the app's final override in `/config/services.php`.
 
@@ -662,8 +676,9 @@ Otherwise, route co-location within `Boot/Registry.php` remains the preferred pa
 
 ### 9.2 Service IDs (left-wins in each merge step)
 
-* Provider IDs override baseline where identical.
-* App `/config/services.php` overrides both baseline and providers.
+* Providers are merged in listed order (`/config/providers.php`) using `$map = $pvMap + $map`.
+* **Later providers in the list** override earlier ones when they share a service ID.
+* App `/config/services.php` overrides both providers and baseline.
 * If you want users to be able to override your service easily, **document your IDs** and keep them stable (semantic versioning).
 
 ---
@@ -1017,7 +1032,7 @@ return [
 ];
 ```
 
-**/config/citomni_http_routes.prod.php** - override a single route by re-declaring its path key:
+**/config/citomni_http_routes.prod.php** (app environment overlay) - override a single route by re-declaring its path key:
 
 ```php
 <?php

@@ -22,7 +22,8 @@ Providers expose up to six constants on a single class: `Boot\Registry`.
 
 * `CFG_HTTP`, `CFG_CLI` - configuration overlays (deep, **last-wins**)
 * `ROUTES_HTTP`, `ROUTES_CLI` - route overlays (path-keyed, **last-wins**)
-* `MAP_HTTP`, `MAP_CLI` - service maps (ID-keyed, **left-wins per merge step**)
+* `MAP_HTTP`, `MAP_CLI` - service maps (ID-keyed, **left-wins per merge step**; in practice, **later providers override earlier ones**, and the **application layer wins last**)
+
 
 The kernel reads those constants during boot and compiles three atomic caches:
 
@@ -108,7 +109,10 @@ namespace VendorName\MyProvider\Boot;
 
 /**
  * Registry: declarative overlay surface for CitOmni.
- * Expose any of CFG_*, ROUTES_*, MAP_* as needed. Constants only.
+ * Constants only; read directly by kernel builders:
+ * - App::buildConfig()   -> CFG_HTTP / CFG_CLI (deep, last-wins)
+ * - App::buildRoutes()   -> ROUTES_HTTP / ROUTES_CLI (path-keyed, last-wins)
+ * - App::buildServices() -> MAP_HTTP / MAP_CLI (left-wins per step: later providers > earlier; app wins last)
  */
 final class Registry {
 
@@ -133,7 +137,7 @@ final class Registry {
 		],
 	];
 
-	/** HTTP routes (path-keyed, last-wins; suffix is part of public contract) */
+	/** HTTP routes (path-keyed, last-wins; remember: suffix (.html/.json) is the public contract) */
 	public const ROUTES_HTTP = [
 		'/demo.html' => [
 			'controller'    => \VendorName\MyProvider\Controller\DemoController::class,
@@ -172,7 +176,7 @@ It uses `BaseService`, keeps construction **cheap & deterministic**, reads polic
 <?php
 declare(strict_types=1);
 
-namespace Vendor\Package\Service;
+namespace VendorName\MyProvider\Service;
 
 use CitOmni\Kernel\Service\BaseService;
 
@@ -258,18 +262,18 @@ Expose the service via your provider's `Boot\Registry`:
 <?php
 declare(strict_types=1);
 
-namespace Vendor\Package\Boot;
+namespace VendorName\MyProvider\Boot;
 
 final class Registry {
 	public const MAP_HTTP = [
 		'greeter' => [
-			'class'   => \Vendor\Package\Service\Greeter::class,
+			'class'   => \VendorName\MyProvider\Service\Greeter::class,
 			'options' => ['suffix' => ' - from Vendor'], // optional
 		],
 	];
 
 	public const CFG_HTTP = [
-		'identity' => ['app_name' => 'My App'], // optional policy surfaced to the service
+		'identity' => ['app_name' => 'My App'], // optional
 	];
 
 	public const MAP_CLI = self::MAP_HTTP;
@@ -277,7 +281,9 @@ final class Registry {
 }
 ```
 
-> **Services precedence:** baseline -> providers -> **app**; services use **left-wins per merge step** (the app's `/config/services.php` runs last, so the app wins).
+> **Services precedence:** vendor baseline -> providers (iterated in order, but **later providers override earlier ones**) -> **application**.  
+> The kernel applies `$map = $pvMap + $map;` per provider and `$map = $appMap + $map;` last.  
+> Array union is **left-wins per step**, which means the application layer always wins overall.
 
 ---
 
@@ -340,7 +346,7 @@ final class DemoController extends BaseController {
 	}
 
 	public function index(): void {
-		$msg = $this->app->demo->greet('World');
+		$msg = $this->app->greeter->greet('World');
 		$this->app->tplEngine->render('public/demo.html@vendor-name/my-provider', [
 			'message' => $msg,
 		]);
@@ -348,6 +354,7 @@ final class DemoController extends BaseController {
 
 	public function postAction(): void {
 		// Example CSRF guard (recommended for POST actions)
+		// Tip: Render field via {{ $csrfField() }} in your template.
 		$this->app->security->guardCsrf($this->app->request->post('_csrf'));
 
 		// Handle input / persistence / etc.
@@ -356,7 +363,7 @@ final class DemoController extends BaseController {
 }
 ```
 
-> The router **instantiates** controllers; ; they are *not* services. Exceptions bubble deterministically to the mode-specific ErrorHandler, which logs and renders structured responses (HTML or JSON).
+> The router **instantiates** controllers; they are *not* services. Exceptions bubble deterministically to the mode-specific ErrorHandler, which logs and renders structured responses (HTML or JSON).
 
 ---
 
@@ -390,7 +397,7 @@ var/cache/routes.http.php
 var/cache/services.http.php
 ```
 
-After warming, the app boots and routes without reading provider boot files.
+After warming, the app boots and routes without including provider boot files (the kernel reads atomic cache files only).
 
 ---
 
@@ -593,27 +600,19 @@ namespace VendorName\MyProvider\Service;
 use CitOmni\Kernel\Service\BaseService;
 
 /**
- * DemoService: tiny example service.
+ * DemoService: Tiny example service.
  *
- * Contract:
- * - Constructor signature enforced by the kernel via BaseService.
- * - init() runs once per request/process to prepare immutable state.
+ * - Deterministic init(): consumes options, derives immutable scalars.
+ * - No I/O in init(); keep hot paths allocation-lean.
  */
 final class DemoService extends BaseService {
 
-	/** @var string */
 	private string $suffix = '';
 
-	/**
-	 * Merge minimal options with config and precompute scalars.
-	 * Keep it cheap; avoid I/O here.
-	 */
 	protected function init(): void {
-		// Consume options (if defined in the service map) and free them
 		$opt = $this->options;
-		$this->options = [];
+		$this->options = []; // free memory, avoid accidental reuse
 
-		// Option takes precedence; fall back to cfg.identity.app_name (if any)
 		$appName = (string)($this->app->cfg->identity->app_name ?? '');
 		$this->suffix = (string)($opt['suffix'] ?? ($appName !== '' ? ' - from ' . $appName : ''));
 	}

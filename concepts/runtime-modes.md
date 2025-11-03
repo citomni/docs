@@ -341,7 +341,9 @@ During application boot, the kernel sequentially reads each listed class, mergin
 2. `ROUTES_HTTP` / `ROUTES_CLI` -> merged into route table.
 3. `MAP_HTTP` / `MAP_CLI` -> merged into service map.
 
-This deterministic sequence ensures that provider order in `/config/providers.php` defines the **overlay precedence** (last listed wins).
+This deterministic sequence ensures that provider order in `/config/providers.php` defines overlay precedence (last listed wins):
+- **Configuration & routes:** *last-wins* (later providers overwrite earlier entries).
+- **Services:** *left-wins per merge step*; the kernel unions maps as `$map = $pvMap + $map;`, so **later providers** (iterated later, placed on the left) override earlier ones; the **application** wins last via `$map = $appMap + $map;`.
 
 ---
 
@@ -349,14 +351,14 @@ This deterministic sequence ensures that provider order in `/config/providers.ph
 
 At boot, the `App` kernel performs three independent merges:
 
-| Builder Method    | Reads (in order)                                                                                       | Writes Cache To                     |
-| ----------------- | ------------------------------------------------------------------------------------------------------- | ----------------------------------- |
-| `buildConfig()`   | `Boot/Config::CFG` -> providers' `CFG_{HTTP|CLI}` -> `/config/citomni_{http|cli}_cfg.php` -> env overlay   | `var/cache/cfg.{http|cli}.php`      |
-| `buildRoutes()`   | `Boot/Routes::MAP_{HTTP|CLI}` -> providers' `ROUTES_{HTTP|CLI}` -> `/config/citomni_{http|cli}_routes.php` -> env overlay | `var/cache/routes.{http|cli}.php`    |
-| `buildServices()` | `Boot/Services::MAP` -> providers' `MAP_{HTTP|CLI}` -> `/config/services.php`                             | `var/cache/services.{http|cli}.php` |
+| Builder Method    | Reads (in order)                                                                                               | Merge rule                                   | Writes Cache To                     |
+|-------------------|----------------------------------------------------------------------------------------------------------------|----------------------------------------------|-------------------------------------|
+| `buildConfig()`   | `Boot/Config::CFG` -> providers `CFG_{HTTP|CLI}` -> app base cfg -> env overlay                                   | **last-wins** (deep associative)             | `var/cache/cfg.{http|cli}.php`      |
+| `buildRoutes()`   | `Boot/Routes::MAP_{HTTP|CLI}` -> providers `ROUTES_{HTTP|CLI}` -> app base routes -> env overlay                  | **last-wins** (by path key)                  | `var/cache/routes.{http|cli}.php`   |
+| `buildServices()` | `Boot/Services::MAP` -> providers `MAP_{HTTP|CLI}` -> app `/config/services.php`                                 | **left-wins per step** via union (`+`)       | `var/cache/services.{http|cli}.php` |
 
-Each layer is merged **recursively and deterministically**, with no runtime I/O or reflection.
-The resulting arrays are pure PHP structures, safe to cache and opcache-compile.
+> For services the kernel applies `$map = $pvMap + $map;` per provider and `$map = $appMap + $map;` last.  
+> That makes **later providers override earlier ones**, and the **application** override both.
 
 ---
 
@@ -514,5 +516,3 @@ Its binary division (HTTP / CLI) is deliberate, sufficient, and theoretically cl
 
 > *Two modes, one philosophy: explicit, deterministic, fast.*
 > CitOmni does not guess. It knows.
-
----
