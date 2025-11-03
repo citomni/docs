@@ -250,7 +250,7 @@ This ensures deterministic access validation, consistent with the CitOmni framew
 
 2. **CSRF validation**  
    All POST requests must verify a submitted token using the Security service:  
-   ```php
+```php
    if (!empty($this->app->cfg->security->csrf_protection)) {
 		$ok = $this->app->security->verifyCsrf(
 			(string)($this->app->request->post($this->app->security->csrfFieldName()) ?? '')
