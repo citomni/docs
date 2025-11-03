@@ -130,13 +130,13 @@ Result: an associative array of service IDs resolved at runtime via `$app->__get
 |-------|---------|-------------------|----------|
 | (1) | Vendor baseline | `\CitOmni\Http\Boot\Routes::MAP_HTTP` or `\CitOmni\Cli\Boot\Routes::MAP_CLI` | Core system routes |
 | (2) | Providers | `ROUTES_HTTP` / `ROUTES_CLI` | Provider-level routes (from `/config/providers.php`) |
-| (3) | Application base | `/config/citomni_{http|cli}_routes.php` | Project-specific routes |
-| (4) | Environment overlay | `/config/citomni_{http|cli}_routes.{ENV}.php` | Environment-specific overrides |
+| (3) | Application base | `/config/citomni_{http or cli}_routes.php` | Project-specific routes |
+| (4) | Environment overlay | `/config/citomni_{http or cli}_routes.{ENV}.php` | Environment-specific overrides |
 
 The merge follows the global *last-wins* rule and is implemented in  
 `App::buildRoutes()`.  
 The resulting array is cached under  
-`/var/cache/routes.{http|cli}.php` for zero-I/O runtime lookups.
+`/var/cache/routes.{HTTP or CLI}.php` for zero-I/O runtime lookups.
 
 
 ### 4.2 Mode-specific Constants
@@ -353,9 +353,9 @@ At boot, the `App` kernel performs three independent merges:
 
 | Builder Method    | Reads (in order)                                                                                               | Merge rule                                   | Writes Cache To                     |
 |-------------------|----------------------------------------------------------------------------------------------------------------|----------------------------------------------|-------------------------------------|
-| `buildConfig()`   | `Boot/Config::CFG` -> providers `CFG_{HTTP|CLI}` -> app base cfg -> env overlay                                   | **last-wins** (deep associative)             | `var/cache/cfg.{http|cli}.php`      |
-| `buildRoutes()`   | `Boot/Routes::MAP_{HTTP|CLI}` -> providers `ROUTES_{HTTP|CLI}` -> app base routes -> env overlay                  | **last-wins** (by path key)                  | `var/cache/routes.{http|cli}.php`   |
-| `buildServices()` | `Boot/Services::MAP` -> providers `MAP_{HTTP|CLI}` -> app `/config/services.php`                                 | **left-wins per step** via union (`+`)       | `var/cache/services.{http|cli}.php` |
+| `buildConfig()`   | `Boot/Config::CFG` -> providers `CFG_{HTTP or CLI}` -> app base cfg -> env overlay                                   | **last-wins** (deep associative)             | `var/cache/cfg.{HTTP or CLI}.php`      |
+| `buildRoutes()`   | `Boot/Routes::MAP_{HTTP or CLI}` -> providers `ROUTES_{HTTP or CLI}` -> app base routes -> env overlay                  | **last-wins** (by path key)                  | `var/cache/routes.{HTTP or CLI}.php`   |
+| `buildServices()` | `Boot/Services::MAP` -> providers `MAP_{HTTP or CLI}` -> app `/config/services.php`                                 | **left-wins per step** via union (`+`)       | `var/cache/services.{HTTP or CLI}.php` |
 
 > For services the kernel applies `$map = $pvMap + $map;` per provider and `$map = $appMap + $map;` last.  
 > That makes **later providers override earlier ones**, and the **application** override both.
