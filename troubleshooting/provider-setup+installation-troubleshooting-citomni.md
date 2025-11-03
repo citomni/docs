@@ -13,7 +13,7 @@
 ## 0) TL;DR - The 60-second checklist
 
 1. **Providers list** - `/config/providers.php` returns **FQCNs of Boot classes**:
-   ```php
+```php
    return [
      \Vendor\Pkg\Boot\Registry::class, // NOT "Provider\Services"
    ];
