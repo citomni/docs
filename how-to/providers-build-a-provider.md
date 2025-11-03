@@ -1,756 +1,707 @@
-Awesome—here’s a **complete, hands-on guide** to building a CitOmni **provider** (example: a tiny **Blog** module with CRUD). It’s verbose on purpose, with copy-paste-ready code. Everything follows your rules: **PHP 8.2+**, **PSR-4**, **K\&R braces**, **tabs**, **English PHPDoc**, **no unnecessary try/catch**, **services via maps**, **deep cfg**, **app-level routes with “last wins”**, and optional **build cache**.
+# How to Build a CitOmni Provider (v1.0)
+
+*A practical, deterministic guide for authoring provider packages.*
 
 ---
 
-# 0) What is a “provider” in CitOmni?
-
-A **provider** is a Composer package that contributes **services** (and optionally **default config** and **routes**) to an app in a **deterministic** way:
-
-* **Services** via `Boot\Services::MAP` (id → class or class+options).
-* **Default config** via `Boot\Config::CFG_HTTP` / `CFG_CLI`.
-* **Optional routes preset** via `Boot\Routes::MAP` (the **app** decides to include or override them).
-* App lists providers in `/config/providers.php`. The kernel merges **vendor → providers → app** (“last wins”).
-
-Providers are **opt-in**: nothing is loaded unless whitelisted in `providers.php`.
+**Document type:** Implementation Guide
+**Version:** 1.0
+**Applies to:** CitOmni ≥ 8.2
+**Audience:** Provider authors, app integrators, and core contributors
+**Status:** Stable and canonical
+**Author:** CitOmni Core Team
+**Copyright:** © 2012-present CitOmni
 
 ---
 
-# 1) Create the provider package
+## 1. What you're building
 
-We’ll call the package `citomni/blog`. Folder structure:
+A **provider** is a Composer package that contributes **configuration overlays**, **routes**, and **services** to a CitOmni application **purely via constants**. No runtime scanning. No reflection. No side effects.
+
+Providers expose up to six constants on a single class: `Boot\Registry`.
+
+* `CFG_HTTP`, `CFG_CLI` - configuration overlays (deep, **last-wins**)
+* `ROUTES_HTTP`, `ROUTES_CLI` - route overlays (path-keyed, **last-wins**)
+* `MAP_HTTP`, `MAP_CLI` - service maps (ID-keyed, **left-wins per merge step**)
+
+The kernel reads those constants during boot and compiles three atomic caches:
 
 ```
-citomni/blog/
-  composer.json
-  src/
-    Boot/
-      Services.php
-      Config.php
-      Routes.php
-    Model/
-      BlogPost.php
-    Service/
-      BlogPostRepository.php
-      BlogService.php
-      Slugger.php
-    Controller/
-      BlogController.php
-    View/
-      blog/
-        index.php
-        show.php
-        form.php
-  README.md
+var/cache/cfg.{http|cli}.php
+var/cache/routes.{http|cli}.php
+var/cache/services.{http|cli}.php
 ```
 
-## 1.1 composer.json
+That's the whole trick: **constants in -> deterministic caches out**.
+
+---
+
+## 2. Prerequisites
+
+* PHP ≥ 8.2, PSR-4 autoloading
+* CitOmni kernel and (optionally) mode packages installed in the *application*
+* Comfortable with the concepts in:
+
+  * *Runtime Modes - CitOmni Application Kernel*
+  * *Routing Layer - CitOmni HTTP Runtime*
+  * *CitOmni Provider Packages (Design, Semantics, and Best Practices)*
+
+---
+
+## 3. Minimal provider layout
+
+```
+vendor-name/my-provider/
+├─ composer.json
+└─ src/
+   ├─ Boot/
+   │  └─ Registry.php                (constants only: CFG_*, ROUTES_*, MAP_*)
+   ├─ Service/
+   │  └─ DemoService.php             (example)
+   ├─ Controller/                    (only if you expose HTTP routes)
+   │  └─ DemoController.php
+   └─ README.md
+```
+
+**composer.json (template):**
 
 ```json
 {
-	"name": "citomni/blog",
-	"description": "CitOmni Blog provider (CRUD example).",
-	"type": "library",
-	"license": "proprietary",
-	"require": {
-		"php": "^8.2"
-	},
-	"autoload": {
-		"psr-4": {
-			"CitOmni\\Blog\\": "src/"
-		}
-	},
-	"minimum-stability": "stable",
-	"prefer-stable": true
+  "name": "vendor-name/my-provider",
+  "description": "CitOmni provider: demo capability",
+  "type": "library",
+  "license": "MIT",
+  "require": {
+    "php": ">=8.2",
+    "citomni/kernel": "^1.0"
+  },
+  "autoload": {
+    "psr-4": {
+      "VendorName\\MyProvider\\": "src/"
+    }
+  },
+  "config": { "optimize-autoloader": true, "sort-packages": true }
 }
 ```
 
-Run `composer dump-autoload -o` inside the package when developing locally (or add it via path/vcs repo to your app).
+If you expose HTTP controllers or rely on HTTP services, add:
+
+```json
+"require": {
+  "php": ">=8.2",
+  "citomni/kernel": "^1.0",
+  "citomni/http": "^1.0"
+}
+```
 
 ---
 
-# 2) Provider boot files
+## 4. The heart of a provider: `Boot\Registry`
 
-These are the **entry points** the app’s kernel reads when merging.
-
-## 2.1 `src/Boot/Services.php`
+`Registry` **must not** execute code. It only defines constants.
 
 ```php
 <?php
 declare(strict_types=1);
 
-namespace CitOmni\Blog\Boot;
+namespace VendorName\MyProvider\Boot;
 
 /**
- * Blog provider services.
- * id => FQCN|string|['class'=>FQCN,'options'=>array]
+ * Registry: declarative overlay surface for CitOmni.
+ * Expose any of CFG_*, ROUTES_*, MAP_* as needed. Constants only.
  */
-final class Services {
-	public const MAP = [
-		// Core blog pieces
-		'blogPostRepo' => \CitOmni\Blog\Service\BlogPostRepository::class,
-		'blogService'  => \CitOmni\Blog\Service\BlogService::class,
+final class Registry {
 
-		// Small utility the provider offers
-		'slugger'      => \CitOmni\Blog\Service\Slugger::class,
-	];
-}
-```
-
-> The app may override any entry in `/config/services.php` (last wins).
-
-## 2.2 `src/Boot/Config.php`
-
-```php
-<?php
-declare(strict_types=1);
-
-namespace CitOmni\Blog\Boot;
-
-/**
- * Default config contribution from this provider.
- * The kernel merges providers' CFG_HTTP into the app's HTTP cfg (last wins).
- */
-final class Config {
+	/** Config overlays (deep, last-wins) */
 	public const CFG_HTTP = [
-		'blog' => [
-			'table'       => 'blog_posts',
-			'date_format' => 'Y-m-d H:i',
-			// simple toggles you can override in the app cfg:
-			'allow_public_post_create' => false,
+		'myProvider' => [
+			'enabled'    => true,
+			'api_base'   => 'https://api.example.test',
+			'cache_ttl'  => 120,
 		],
 	];
-}
-```
 
-> Keep it small. The app can override in `/config/citomni_http_cfg.php` or env overlays (`citomni_http_cfg.prod.php`, etc.).
+	/** Service map (ID -> class or shape) - left-wins per merge step */
+	public const MAP_HTTP = [
+		// Bare FQCN: constructor receives (App $app)
+		'demo' => \VendorName\MyProvider\Service\DemoService::class,
 
-## 2.3 `src/Boot/Routes.php` (optional)
-
-Providers **should not force routes**. Offer a preset the **app** can import:
-
-```php
-<?php
-declare(strict_types=1);
-
-namespace CitOmni\Blog\Boot;
-
-use CitOmni\Blog\Controller\BlogController;
-
-final class Routes {
-	public const MAP = [
-		'/blog' => [
-			'controller' => BlogController::class,
-			'action'     => 'index',
-			'methods'    => ['GET'],
+		// With options: constructor receives (App $app, array $options)
+		'demoWithOpts' => [
+			'class'   => \VendorName\MyProvider\Service\DemoService::class,
+			'options' => ['mode' => 'strict']
 		],
-		'/blog/new' => [
-			'controller' => BlogController::class,
-			'action'     => 'createForm',
-			'methods'    => ['GET'],
+	];
+
+	/** HTTP routes (path-keyed, last-wins; suffix is part of public contract) */
+	public const ROUTES_HTTP = [
+		'/demo.html' => [
+			'controller'    => \VendorName\MyProvider\Controller\DemoController::class,
+			'action'        => 'index',
+			'methods'       => ['GET'],
+			'template_file' => 'public/demo.html', // optional if your renderer needs it
+			'template_layer'=> 'vendor-name/my-provider',
 		],
-		'/blog' => [
-			'controller' => BlogController::class,
-			'action'     => 'create',
+		'/demo' => [
+			'controller' => \VendorName\MyProvider\Controller\DemoController::class,
+			'action'     => 'postAction',
 			'methods'    => ['POST'],
 		],
-		'regex' => [
-			'/blog/{id}' => [
-				'controller' => BlogController::class,
-				'action'     => 'show',
-				'methods'    => ['GET'],
-			],
-			'/blog/{id}/edit' => [
-				'controller' => BlogController::class,
-				'action'     => 'editForm',
-				'methods'    => ['GET'],
-			],
-			'/blog/{id}' => [
-				'controller' => BlogController::class,
-				'action'     => 'update',
-				'methods'    => ['POST'], // or PUT/PATCH if you prefer
-			],
-			'/blog/{id}/delete' => [
-				'controller' => BlogController::class,
-				'action'     => 'delete',
-				'methods'    => ['POST'], // CSRF protected
-			],
+	];
+
+	/** CLI mirrors if needed
+	public const CFG_CLI = [...];
+	public const MAP_CLI = [...];
+	public const ROUTES_CLI = [...]; // rare
+	*/
+}
+```
+
+> Keep keys **associative**; avoid numeric lists unless you intend downstream replacement.
+
+---
+
+## 5) Example service (authoring & registration)
+
+Below is a **production-ready** example aligned with [CitOmni Services - Authoring, Registration, and Usage](https://github.com/citomni/docs/blob/main/how-to/services-authoring-registration-usage.md).
+It uses `BaseService`, keeps construction **cheap & deterministic**, reads policy from `$this->app->cfg`, and treats map `'options'` as **construction-time wiring**.
+
+### 5.1 Authoring (Service class)
+
+```php
+<?php
+declare(strict_types=1);
+
+namespace Vendor\Package\Service;
+
+use CitOmni\Kernel\Service\BaseService;
+
+/**
+ * Greeter: Deterministic greeting builder with minimal overhead.
+ *
+ * Responsibilities
+ * - Build a greeting string from a validated name and an optional suffix.
+ * - Options override config; both are optional.
+ * - No I/O; no global state; fail-fast on invalid inputs.
+ *
+ * Performance
+ * - Computes immutable scalars in init(); hot-path methods allocate minimally.
+ *
+ * Typical usage:
+ *   $msg = $this->app->greeter->greet('Alice'); // "Hello, Alice - from My App"
+ *
+ * @throws \InvalidArgumentException On empty/invalid input name.
+ */
+final class Greeter extends BaseService {
+	/** @var string Immutable suffix computed at init() */
+	private string $suffix = '';
+
+	/**
+	 * One-time initialization per request/process.
+	 * Merges construction options (from map) with runtime policy (from cfg).
+	 *
+	 * Precedence:
+	 *   options['suffix'] > cfg.identity.app_name (prefixed with " - from ")
+	 *
+	 * @return void
+	 */
+	protected function init(): void {
+		// 1) Read optional policy from config
+		$appName = '';
+		$identity = $this->app->cfg->identity ?? null;
+		if (\is_object($identity)) {
+			$appName = (string)($identity->app_name ?? '');
+		}
+
+		// 2) Consume options and clear them (free memory, avoid reuse)
+		$opt = $this->options;
+		$this->options = [];
+
+		// 3) Compute immutable scalar
+		$optSuffix = (string)($opt['suffix'] ?? '');
+		$this->suffix = ($optSuffix !== '')
+			? $optSuffix
+			: ($appName !== '' ? ' - from ' . $appName : '');
+	}
+
+	/**
+	 * Build a greeting (pure, allocation-lean).
+	 *
+	 * @param string $name Non-empty display name; trimmed.
+	 * @return string Greeting string.
+	 *
+	 * @throws \InvalidArgumentException If $name is empty after trim.
+	 */
+	public function greet(string $name): string {
+		$name = \trim($name);
+		if ($name === '') {
+			throw new \InvalidArgumentException('Name cannot be empty.');
+		}
+		return 'Hello, ' . $name . $this->suffix;
+	}
+}
+```
+
+**Key points**
+
+* Extends `BaseService`; **do not** `new` it manually-let `App` resolve on first access.
+* Reads config via `$this->app->cfg` (deep, read-only wrapper).
+* Treats map `'options'` as construction-time hints; clears `$this->options` in `init()`.
+
+---
+
+### 5.2 Registration (provider map)
+
+Expose the service via your provider's `Boot\Registry`:
+
+```php
+<?php
+declare(strict_types=1);
+
+namespace Vendor\Package\Boot;
+
+final class Registry {
+	public const MAP_HTTP = [
+		'greeter' => [
+			'class'   => \Vendor\Package\Service\Greeter::class,
+			'options' => ['suffix' => ' - from Vendor'], // optional
 		],
 	];
+
+	public const CFG_HTTP = [
+		'identity' => ['app_name' => 'My App'], // optional policy surfaced to the service
+	];
+
+	public const MAP_CLI = self::MAP_HTTP;
+	public const CFG_CLI = self::CFG_HTTP;
 }
+```
+
+> **Services precedence:** baseline -> providers -> **app**; services use **left-wins per merge step** (the app's `/config/services.php` runs last, so the app wins).
+
+---
+
+### 5.3 Application override (optional)
+
+Swap implementation or tweak options without touching the provider:
+
+```php
+<?php
+// /config/services.php
+return [
+	// Replace implementation:
+	'greeter' => \App\Service\CustomGreeter::class,
+
+	// ...or keep class and change options:
+	// 'greeter' => [
+	// 	'class'   => \Vendor\Package\Service\Greeter::class,
+	// 	'options' => ['suffix' => ' - from Production'],
+	// ],
+];
 ```
 
 ---
 
-# 3) Domain model & services
-
-## 3.1 `src/Model/BlogPost.php`
+### 5.4 Usage
 
 ```php
-<?php
-declare(strict_types=1);
-
-namespace CitOmni\Blog\Model;
-
-/**
- * BlogPost model. Simple value object.
- */
-final class BlogPost {
-	public int $id;
-	public string $title;
-	public string $slug;
-	public string $body;
-	public \DateTimeImmutable $createdAt;
-
-	public function __construct(int $id, string $title, string $slug, string $body, \DateTimeImmutable $createdAt) {
-		$this->id = $id;
-		$this->title = $title;
-		$this->slug = $slug;
-		$this->body = $body;
-		$this->createdAt = $createdAt;
-	}
-}
+// Anywhere with $this->app:
+$msg = $this->app->greeter->greet('World');
 ```
 
-## 3.2 `src/Service/Slugger.php`
-
-```php
-<?php
-declare(strict_types=1);
-
-namespace CitOmni\Blog\Service;
-
-use CitOmni\Kernel\App;
-
-/**
- * Tiny slug utility. No options required.
- */
-final class Slugger {
-	private App $app;
-
-	public function __construct(App $app, array $options = []) {
-		$this->app = $app;
-	}
-
-	public function slugify(string $title): string {
-		$slug = \strtolower(\trim($title));
-		$slug = \preg_replace('/[^a-z0-9]+/i', '-', $slug) ?? '';
-		return \trim($slug, '-');
-	}
-}
-```
-
-## 3.3 `src/Service/BlogPostRepository.php`
-
-Assumes you have a **Connection** service exposed as `$this->app->connection` that wraps `mysqli` (or your LiteMySQLi). Replace SQL/table name via cfg.
-
-```php
-<?php
-declare(strict_types=1);
-
-namespace CitOmni\Blog\Service;
-
-use CitOmni\Kernel\App;
-use CitOmni\Blog\Model\BlogPost;
-
-/**
- * Data access for blog posts (mysqli-based).
- * No catch blocks: fail fast and let the global error handler do logging.
- */
-final class BlogPostRepository {
-	private App $app;
-	private string $table;
-
-	public function __construct(App $app, array $options = []) {
-		$this->app = $app;
-		$this->table = (string)($this->app->cfg->blog->table ?? 'blog_posts');
-	}
-
-	/** @return list<BlogPost> */
-	public function list(int $limit = 50, int $offset = 0): array {
-		$db = $this->app->connection->mysqli(); // adjust if your Connection differs
-		$sql = "SELECT id, title, slug, body, created_at FROM `{$this->table}` ORDER BY id DESC LIMIT ? OFFSET ?";
-		$stmt = $db->prepare($sql);
-		$stmt->bind_param('ii', $limit, $offset);
-		$stmt->execute();
-		$res = $stmt->get_result();
-
-		$rows = [];
-		while ($row = $res->fetch_assoc()) {
-			$rows[] = new BlogPost(
-				(int)$row['id'],
-				(string)$row['title'],
-				(string)$row['slug'],
-				(string)$row['body'],
-				new \DateTimeImmutable((string)$row['created_at'])
-			);
-		}
-		return $rows;
-	}
-
-	public function find(int $id): ?BlogPost {
-		$db = $this->app->connection->mysqli();
-		$sql = "SELECT id, title, slug, body, created_at FROM `{$this->table}` WHERE id = ?";
-		$stmt = $db->prepare($sql);
-		$stmt->bind_param('i', $id);
-		$stmt->execute();
-		$res = $stmt->get_result();
-		$row = $res->fetch_assoc();
-		if (!$row) {
-			return null;
-		}
-		return new BlogPost(
-			(int)$row['id'],
-			(string)$row['title'],
-			(string)$row['slug'],
-			(string)$row['body'],
-			new \DateTimeImmutable((string)$row['created_at'])
-		);
-	}
-
-	public function create(string $title, string $slug, string $body): int {
-		$db = $this->app->connection->mysqli();
-		$now = (new \DateTimeImmutable())->format('Y-m-d H:i:s');
-		$sql = "INSERT INTO `{$this->table}` (title, slug, body, created_at) VALUES (?, ?, ?, ?)";
-		$stmt = $db->prepare($sql);
-		$stmt->bind_param('ssss', $title, $slug, $body, $now);
-		$stmt->execute();
-		return $db->insert_id;
-	}
-
-	public function update(int $id, string $title, string $slug, string $body): void {
-		$db = $this->app->connection->mysqli();
-		$sql = "UPDATE `{$this->table}` SET title = ?, slug = ?, body = ? WHERE id = ?";
-		$stmt = $db->prepare($sql);
-		$stmt->bind_param('sssi', $title, $slug, $body, $id);
-		$stmt->execute();
-	}
-
-	public function delete(int $id): void {
-		$db = $this->app->connection->mysqli();
-		$sql = "DELETE FROM `{$this->table}` WHERE id = ?";
-		$stmt = $db->prepare($sql);
-		$stmt->bind_param('i', $id);
-		$stmt->execute();
-	}
-}
-```
-
-## 3.4 `src/Service/BlogService.php`
-
-Business logic around the repo (slug generation, basic validation, CSRF hook usage, etc.).
-
-```php
-<?php
-declare(strict_types=1);
-
-namespace CitOmni\Blog\Service;
-
-use CitOmni\Kernel\App;
-use CitOmni\Blog\Model\BlogPost;
-
-final class BlogService {
-	private App $app;
-	private BlogPostRepository $repo;
-	private Slugger $slugger;
-
-	public function __construct(App $app, array $options = []) {
-		$this->app = $app;
-		$this->repo = $app->blogPostRepo; // via services map
-		$this->slugger = $app->slugger;
-	}
-
-	/** @return list<BlogPost> */
-	public function list(): array {
-		return $this->repo->list(50, 0);
-	}
-
-	public function get(int $id): ?BlogPost {
-		return $this->repo->find($id);
-	}
-
-	public function create(string $title, string $body): int {
-		$title = \trim($title);
-		$body  = \trim($body);
-		if ($title === '' || $body === '') {
-			throw new \InvalidArgumentException('Title and body are required.');
-		}
-		$slug = $this->slugger->slugify($title);
-		return $this->repo->create($title, $slug, $body);
-	}
-
-	public function update(int $id, string $title, string $body): void {
-		$title = \trim($title);
-		$body  = \trim($body);
-		if ($title === '' || $body === '') {
-			throw new \InvalidArgumentException('Title and body are required.');
-		}
-		$slug = $this->slugger->slugify($title);
-		$this->repo->update($id, $title, $slug, $body);
-	}
-
-	public function delete(int $id): void {
-		$this->repo->delete($id);
-	}
-}
-```
+That's it: **constants in -> deterministic caches out**. Your service now follows the CitOmni contract for **authoring, registration, and usage**.
 
 ---
 
-# 4) HTTP controller & views
-
-## 4.1 `src/Controller/BlogController.php`
+## 6. Example controller (only if you expose HTTP routes)
 
 ```php
 <?php
 declare(strict_types=1);
 
-namespace CitOmni\Blog\Controller;
+namespace VendorName\MyProvider\Controller;
 
-use CitOmni\Kernel\App;
+use CitOmni\Kernel\Controller\BaseController;
 
 /**
- * Blog CRUD controller.
- * Requires services: blogService, view, request, response, security (for CSRF).
+ * DemoController: simple example for provider-exposed HTTP route.
+ *
+ * Controllers are short-lived action handlers:
+ * - Instantiated once per request by the Router.
+ * - `$this->app` is injected automatically.
+ * - `init()` runs before the first action call.
+ *
+ * @see \CitOmni\Http\Router
  */
-final class BlogController {
-	private App $app;
+final class DemoController extends BaseController {
 
-	public function __construct(App $app, array $ctx = []) {
-		$this->app = $app;
+	protected function init(): void {
+		// Optional setup (runs once per controller instance)
 	}
 
 	public function index(): void {
-		$posts = $this->app->blogService->list();
-		$this->app->view->render('blog/index.php', ['posts' => $posts]);
+		$msg = $this->app->demo->greet('World');
+		$this->app->tplEngine->render('public/demo.html@vendor-name/my-provider', [
+			'message' => $msg,
+		]);
 	}
 
-	public function show(int $id): void {
-		$post = $this->app->blogService->get($id);
-		if ($post === null) {
-			http_response_code(404);
-			$this->app->view->render('errors/404.php', []);
-			return;
-		}
-		$this->app->view->render('blog/show.php', ['post' => $post]);
-	}
-
-	public function createForm(): void {
-		// Optional access control:
-		if (!$this->app->cfg->blog->allow_public_post_create) {
-			// Example role check:
-			// if (!$this->app->security->hasRole(ROLE_ADMIN)) { ... }
-		}
-		$csrf = $this->app->security->csrfToken();
-		$this->app->view->render('blog/form.php', ['csrf' => $csrf, 'mode' => 'create']);
-	}
-
-	public function create(): void {
+	public function postAction(): void {
+		// Example CSRF guard (recommended for POST actions)
 		$this->app->security->guardCsrf($this->app->request->post('_csrf'));
-		$title = (string)$this->app->request->post('title');
-		$body  = (string)$this->app->request->post('body');
 
-		$id = $this->app->blogService->create($title, $body);
-		$this->app->response->redirect('/blog/' . $id);
-	}
-
-	public function editForm(int $id): void {
-		$post = $this->app->blogService->get($id);
-		if ($post === null) {
-			http_response_code(404);
-			$this->app->view->render('errors/404.php', []);
-			return;
-		}
-		$csrf = $this->app->security->csrfToken();
-		$this->app->view->render('blog/form.php', ['csrf' => $csrf, 'mode' => 'edit', 'post' => $post]);
-	}
-
-	public function update(int $id): void {
-		$this->app->security->guardCsrf($this->app->request->post('_csrf'));
-		$title = (string)$this->app->request->post('title');
-		$body  = (string)$this->app->request->post('body');
-		$this->app->blogService->update($id, $title, $body);
-		$this->app->response->redirect('/blog/' . $id);
-	}
-
-	public function delete(int $id): void {
-		$this->app->security->guardCsrf($this->app->request->post('_csrf'));
-		$this->app->blogService->delete($id);
-		$this->app->response->redirect('/blog');
+		// Handle input / persistence / etc.
+		$this->app->response->redirect('/demo.html');
 	}
 }
 ```
 
-> Controller is **not** a service. Router `new`s it and injects `$app`.
-
-## 4.2 Views (very simple)
-
-`src/View/blog/index.php`
-
-```php
-<?php /** @var array{posts:list<CitOmni\Blog\Model\BlogPost>} $__data */ ?>
-<h1>Blog</h1>
-<p><a href="/blog/new">Create a post</a></p>
-<ul>
-<?php foreach ($__data['posts'] as $p): ?>
-	<li><a href="/blog/<?= (int)$p->id ?>"><?= htmlspecialchars($p->title) ?></a></li>
-<?php endforeach; ?>
-</ul>
-```
-
-`src/View/blog/show.php`
-
-```php
-<?php /** @var array{post:CitOmni\Blog\Model\BlogPost} $__data */ $p = $__data['post']; ?>
-<h1><?= htmlspecialchars($p->title) ?></h1>
-<article><?= nl2br(htmlspecialchars($p->body)) ?></article>
-<p>
-	<a href="/blog/<?= (int)$p->id ?>/edit">Edit</a>
-	<form method="post" action="/blog/<?= (int)$p->id ?>/delete" style="display:inline">
-		<input type="hidden" name="_csrf" value="<?= htmlspecialchars($this->app->security->csrfToken()) ?>">
-		<button type="submit">Delete</button>
-	</form>
-</p>
-```
-
-`src/View/blog/form.php`
-
-```php
-<?php
-/** @var array{csrf:string,mode:string,post?:CitOmni\Blog\Model\BlogPost} $__data */
-$mode = $__data['mode'];
-$editing = ($mode === 'edit');
-$p = $editing ? $__data['post'] : null;
-$action = $editing ? '/blog/' . (int)$p->id : '/blog';
-$title  = $editing ? $p->title : '';
-$body   = $editing ? $p->body : '';
-?>
-<h1><?= $editing ? 'Edit post' : 'Create post' ?></h1>
-<form method="post" action="<?= htmlspecialchars($action) ?>">
-	<input type="hidden" name="_csrf" value="<?= htmlspecialchars($__data['csrf']) ?>">
-	<p>
-		<label>Title<br>
-			<input type="text" name="title" value="<?= htmlspecialchars($title) ?>">
-		</label>
-	</p>
-	<p>
-		<label>Body<br>
-			<textarea name="body" rows="8" cols="60"><?= htmlspecialchars($body) ?></textarea>
-		</label>
-	</p>
-	<p><button type="submit"><?= $editing ? 'Save' : 'Create' ?></button></p>
-</form>
-```
-
-> Your app’s `view` service should map view names like `'blog/index.php'` to a template file. Keep provider templates **non-sensitive**.
+> The router **instantiates** controllers; ; they are *not* services. Exceptions bubble deterministically to the mode-specific ErrorHandler, which logs and renders structured responses (HTML or JSON).
 
 ---
 
-# 5) Database schema (SQL) + a tiny CLI to create it
+## 7. Register the provider in an application
 
-**SQL schema** (your provider README can include it):
+In the **app** repository:
 
-```sql
-CREATE TABLE `blog_posts` (
-  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `title` VARCHAR(200) NOT NULL,
-  `slug` VARCHAR(220) NOT NULL,
-  `body` TEXT NOT NULL,
-  `created_at` DATETIME NOT NULL,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uq_slug` (`slug`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-```
-
-**Optional CLI command (in your provider) to create the table** (if you have a CLI mode):
-
-`src/Command/BlogInstallCommand.php`
-
-```php
-<?php
-declare(strict_types=1);
-
-namespace CitOmni\Blog\Command;
-
-use CitOmni\Kernel\App;
-
-final class BlogInstallCommand {
-	private App $app;
-	public function __construct(App $app, array $ctx = []) {
-		$this->app = $app;
-	}
-
-	public function __invoke(array $argv): int {
-		$sql = <<<'SQL'
-CREATE TABLE IF NOT EXISTS `blog_posts` (
-  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `title` VARCHAR(200) NOT NULL,
-  `slug` VARCHAR(220) NOT NULL,
-  `body` TEXT NOT NULL,
-  `created_at` DATETIME NOT NULL,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uq_slug` (`slug`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-SQL;
-		$this->app->connection->mysqli()->query($sql);
-		$this->app->log->write('system.log', 'Blog table ensured.');
-		echo "OK: blog_posts ensured.\n";
-		return 0;
-	}
-}
-```
-
-Register it in your CLI provider (similar to HTTP services) if you maintain a CLI side.
-
----
-
-# 6) Integrate the provider in an app
-
-## 6.1 Install
-
-In the **app**:
-
-```bash
-composer require citomni/blog
-composer dump-autoload -o
-```
-
-## 6.2 Whitelist the provider
-
-`/config/providers.php`:
+### 7.1 Add to `/config/providers.php`
 
 ```php
 <?php
 declare(strict_types=1);
 
 return [
-	// ... other providers ...
-	\CitOmni\Blog\Boot\Services::class, // services map
-	\CitOmni\Blog\Boot\Config::class,   // default cfg contribution (HTTP)
-	// Routes are opt-in from the app/routes file (see next step).
+	// other providers...
+	\VendorName\MyProvider\Boot\Registry::class,
 ];
 ```
 
-## 6.3 Add routes (app-level, last wins)
+### 7.2 Warm caches
 
-Your app owns `/config/routes.php`. Import provider’s preset and override what you want.
+Call your warm-up (HTTP mode shown):
+
+```php
+// e.g., in a deploy step or admin tool:
+$this->app->warmCache(overwrite: true, opcacheInvalidate: true);
+
+// Resulting artifacts:
+var/cache/cfg.http.php
+var/cache/routes.http.php
+var/cache/services.http.php
+```
+
+After warming, the app boots and routes without reading provider boot files.
+
+---
+
+## 8. Overriding from the application
+
+### 8.1 Override service implementation or options
+
+`/config/services.php`:
 
 ```php
 <?php
-declare(strict_types=1);
+return [
+	// Replace provider service by ID:
+	'demo' => \App\Service\CustomDemoService::class,
 
-use App\Http\Controller\HomeController;
-use CitOmni\Blog\Boot\Routes as BlogRoutes;
-
-$providerRoutes = BlogRoutes::MAP;
-
-// Your existing routes
-$appRoutes = [
-	'/' => [
-		'controller' => HomeController::class,
-		'action'     => 'index',
-		'methods'    => ['GET'],
+	// Or just tweak options:
+	'demoWithOpts' => [
+		'class'   => \VendorName\MyProvider\Service\DemoService::class,
+		'options' => ['mode' => 'paranoid'],
 	],
 ];
-
-// Merge with “app last wins”:
-$merged = $providerRoutes + $appRoutes;
-
-// If you need to merge the nested 'regex' sub-array too:
-if (isset($providerRoutes['regex']) && \is_array($providerRoutes['regex'])) {
-	$merged['regex'] = ($providerRoutes['regex'] + ($appRoutes['regex'] ?? []));
-}
-
-return $merged;
 ```
 
-> Alternatively, if you prefer `array_replace` semantics:
-> `\$merged = \array_replace($providerRoutes, $appRoutes);`
-> And for `regex`: `\$merged['regex'] = \array_replace($providerRoutes['regex'] ?? [], $appRoutes['regex'] ?? []);`
+*Services use **left-wins** per merge step; the app runs last, so the app's ID wins.*
 
-## 6.4 App config overrides (optional)
+### 8.2 Override configuration
 
 `/config/citomni_http_cfg.php`:
 
 ```php
 <?php
-declare(strict_types=1);
-
 return [
-	'blog' => [
-		'table' => 'blog_posts', // keep or change name
-		'allow_public_post_create' => false,
+	'myProvider' => [
+		'enabled'   => true,
+		'api_base'  => 'https://api.example.prod',
+		'cache_ttl' => 300,
 	],
-	'routes' => require __DIR__ . '/routes.php',
 ];
 ```
 
-And env overlays if you use them:
+*Config uses **last-wins** (deep).*
 
-* `/config/citomni_http_cfg.stage.php`
-* `/config/citomni_http_cfg.prod.php`
+### 8.3 Override a route
 
-## 6.5 Warm & use build cache (recommended)
-
-After enabling the provider, regenerate caches:
-
-* If you exposed a route/controller to warm:
+`/config/citomni_http_routes.php`:
 
 ```php
-// GET /admin/cache/warm -> calls:
+<?php
+use App\Controller\BetterDemoController;
+
+return [
+	'/demo.html' => [
+		'controller'    => BetterDemoController::class,
+		'action'        => 'index',
+		'methods'       => ['GET'],
+		'template_file' => 'public/demo.html',
+		'template_layer'=> 'app',
+	],
+];
+```
+
+*Routes use **last-wins by path key**. Remember: suffixes (`.html`, `.json`) are part of the public contract.*
+
+Re-warm caches after any of the above.
+
+---
+
+## 9. Routing specifics (HTTP)
+
+* Prefer literal, path-keyed entries:
+
+  ```php
+  '/feature.html' => [...], '/api/feature.json' => [...]
+  ```
+* Action-only endpoints (PRG, redirects) have **no suffix**:
+
+  ```
+  '/feature' => ['methods' => ['POST']]
+  ```
+* Regex routes go under a `regex` list **only if necessary**; otherwise keep routing simple and literal.
+* The router raises 404/405/5xx via the central **ErrorHandler**. Do not define "error routes."
+
+---
+
+## 10. Error handling (don't catch broadly)
+
+Let exceptions and PHP errors bubble:
+
+* The HTTP mode's `\CitOmni\Http\Service\ErrorHandler` performs logging (JSONL rotation),
+  content negotiation (HTML/JSON), and safe rendering.
+* If you must intentionally raise an HTTP fault, call:
+
+  ```php
+  $this->app->errorHandler->httpError(404, ['reason' => 'not_found']);
+  ```
+
+---
+
+## 11. Testing your provider
+
+* **Unit**: test services as plain classes (pass a minimal App test harness).
+* **Routes**: assert that `/demo.html` resolves to the correct controller/action.
+* **Overrides**: add tests proving app-side `services.php` wins for the same ID.
+* **Purity**: require `Boot/Registry.php` and assert no side effects (no output, no globals, no function calls).
+
+---
+
+## 12. Performance notes
+
+* Constants only in `Boot/Registry.php`.
+* Constructors should be cheap; defer I/O till first use.
+* Caches are **atomic** `return [ ... ];` files; safe for OPcache with `validate_timestamps=0`.
+* Warming any cache does not require warming the others, but warming **all three** is recommended after provider changes.
+
+---
+
+## 13. Versioning, stability, and API surface
+
+* **Service IDs** and top-level **config keys** are public API. Renaming them is a **breaking change**.
+* Route **path keys** are public contract; changing or removing them is breaking.
+* Use SemVer. Document deprecations and provide migration notes.
+
+---
+
+## 14. Quick checklist (TL;DR)
+
+* [ ] Create `src/Boot/Registry.php` with any of: `CFG_*`, `ROUTES_*`, `MAP_*`.
+* [ ] No code execution in `Boot/Registry.php`. **Constants only.**
+* [ ] Services follow `__construct(App $app, array $options = [])`.
+* [ ] Routes include correct suffixes (`.html` / `.json`) where applicable.
+* [ ] Add provider FQCN to the app's `/config/providers.php`.
+* [ ] Rebuild caches: cfg, routes, services.
+* [ ] Write unit tests for services and route resolution.
+* [ ] Document your public service IDs and config keys.
+
+---
+
+## 15. Complete minimal example (copy-paste ready)
+
+**`src/Boot/Registry.php`**
+
+```php
+<?php
+declare(strict_types=1);
+
+namespace VendorName\MyProvider\Boot;
+
+/**
+ * Provider registry: declarative overlays only.
+ * Constants are read by the kernel builders:
+ * - App::buildConfig()   -> CFG_HTTP / CFG_CLI
+ * - App::buildRoutes()   -> ROUTES_HTTP / ROUTES_CLI
+ * - App::buildServices() -> MAP_HTTP / MAP_CLI
+ */
+final class Registry {
+
+	/** HTTP configuration overlay (deep, last-wins) */
+	public const CFG_HTTP = [
+		'myProvider' => [
+			'enabled'   => true,
+			'cache_ttl' => 60,
+		],
+	];
+
+	/** HTTP service map (ID -> class or ['class'=>..., 'options'=>...]) */
+	public const MAP_HTTP = [
+		// Bare class (constructor receives App, []):
+		'demo' => \VendorName\MyProvider\Service\DemoService::class,
+
+		// Example with options (uncomment if needed):
+		// 'demo' => [
+		// 	'class'   => \VendorName\MyProvider\Service\DemoService::class,
+		// 	'options' => ['suffix' => ' - from MyProvider'],
+		// ],
+	];
+
+	/** HTTP routes (path-keyed, last-wins) */
+	public const ROUTES_HTTP = [
+		'/demo.html' => [
+			'controller'    => \VendorName\MyProvider\Controller\DemoController::class,
+			'action'        => 'index',
+			'methods'       => ['GET'],
+			'template_file' => 'public/demo.html',
+			'template_layer'=> 'vendor-name/my-provider',
+		],
+	];
+}
+```
+
+---
+
+**`src/Service/DemoService.php`**
+
+```php
+<?php
+declare(strict_types=1);
+
+namespace VendorName\MyProvider\Service;
+
+use CitOmni\Kernel\Service\BaseService;
+
+/**
+ * DemoService: tiny example service.
+ *
+ * Contract:
+ * - Constructor signature enforced by the kernel via BaseService.
+ * - init() runs once per request/process to prepare immutable state.
+ */
+final class DemoService extends BaseService {
+
+	/** @var string */
+	private string $suffix = '';
+
+	/**
+	 * Merge minimal options with config and precompute scalars.
+	 * Keep it cheap; avoid I/O here.
+	 */
+	protected function init(): void {
+		// Consume options (if defined in the service map) and free them
+		$opt = $this->options;
+		$this->options = [];
+
+		// Option takes precedence; fall back to cfg.identity.app_name (if any)
+		$appName = (string)($this->app->cfg->identity->app_name ?? '');
+		$this->suffix = (string)($opt['suffix'] ?? ($appName !== '' ? ' - from ' . $appName : ''));
+	}
+
+	public function ping(): string {
+		return 'pong' . $this->suffix;
+	}
+}
+```
+
+---
+
+**`src/Controller/DemoController.php`**
+
+```php
+<?php
+declare(strict_types=1);
+
+namespace VendorName\MyProvider\Controller;
+
+use CitOmni\Kernel\Controller\BaseController;
+
+/**
+ * DemoController: provider-exposed HTTP route handler.
+ *
+ * Controllers are instantiated by the Router (not services).
+ * Exceptions bubble to the mode-specific ErrorHandler.
+ */
+final class DemoController extends BaseController {
+
+	protected function init(): void {
+		// Optional per-controller setup (once per instance).
+		// Keep it side-effect free and cheap.
+	}
+
+	public function index(): void {
+		$msg = 'Service says: ' . $this->app->demo->ping();
+
+		// Render using provider layer notation:
+		$this->app->tplEngine->render('public/demo.html@vendor-name/my-provider', [
+			'message' => $msg,
+		]);
+	}
+}
+```
+
+---
+
+**App integration**
+
+```php
+// /config/providers.php
+<?php
+return [
+	\VendorName\MyProvider\Boot\Registry::class,
+];
+```
+
+*(Optional) App-side overrides for services:*
+
+```php
+// /config/services.php
+<?php
+return [
+	// Override provider's 'demo' with app-local implementation or options:
+	// 'demo' => [
+	// 	'class'   => \App\Service\DemoService::class,
+	// 	'options' => ['suffix' => ' - from ThisApp'],
+	// ],
+];
+```
+
+**Deploy step (warm caches per mode):**
+
+* `var/cache/cfg.http.php`
+* `var/cache/routes.http.php`
+* `var/cache/services.http.php`
+
+```php
+// Anywhere in your deploy/bootstrap script:
 $this->app->warmCache(overwrite: true, opcacheInvalidate: true);
 ```
 
-* Or via CLI:
-
-```
-php bin/cit cache:warm http
-```
-
-Then reload and visit `/blog`.
+Then visit **`/demo.html`**.
 
 ---
 
-# 7) Security notes
+**In essence:**
 
-* **CSRF**: we used `$this->app->security->csrfToken()` + `guardCsrf()` for POST actions.
-* **Auth/roles**: if needed, gate create/edit/delete with `hasRole(ROLE_ADMIN)` (load `/config/roles.php` in cfg).
-* **Validation**: keep it simple in `BlogService`. For more, add a `Validator` service.
-
----
-
-# 8) Performance notes
-
-* Provider code only loads when the provider is **whitelisted**.
-* With **compiled cfg/services** cache, provider boot files are not included at runtime.
-* Keep templates minimal; avoid catching exceptions in controllers/services.
-* Composer: `"optimize-autoloader": true`, `"apcu-autoloader": true` (if APCu present).
-* OPcache in prod: `validate_timestamps=0`, reset on deploy.
-
----
-
-# 9) Testing (very light touch)
-
-* **Unit**: test `Slugger::slugify`, `BlogService::create/update`.
-* **Integration**: spin up a test DB, call `BlogPostRepository` methods.
-* **HTTP**: route to `BlogController`, assert 200/302, presence of strings.
-
----
-
-# 10) FAQ / Gotchas
-
-* **Routes live in the app**. Providers only **offer** a preset (`Boot\Routes::MAP`). App merges and **wins** on conflicts.
-* **DB connection**: adjust the repo to the actual API of your `connection` service.
-* **View paths**: confirm how your `view` service resolves template names (relative to app vs vendor). If your view loader is app-centric, copy provider views into the app’s templates folder or configure a secondary view root.
-* **Env overlays**: if you enabled `citomni_http_cfg.{env}.php` in kernel, those overlay files override provider defaults.
-
----
-
-## That’s it 🎉
-
-You now have a fully working **Blog provider** with services, default config, optional routes, controller, model, views, and SQL—wired the CitOmni way:
-
-* deterministic “last wins” merging,
-* deep cfg access (`$this->app->cfg->blog->table`),
-* service maps (no magic scanning),
-* app-owned routing, and
-* optional build cache for green performance.
+> A provider is a **declarative overlay**: constants on `Boot\Registry`, tiny Services extending `BaseService`, and simple Controllers extending `BaseController`.
+> The kernel composes config, routes, and services into atomic caches. **Explicit. Deterministic. Fast.**
