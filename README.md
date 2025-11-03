@@ -60,8 +60,7 @@ This repository hosts the public documentation for the CitOmni Framework.
 
 ### troubleshooting
 - [troubleshooting/README.md](./troubleshooting/README.md)
-- [troubleshooting/providers-autoload.md](./troubleshooting/providers-autoload.md)
-- [troubleshooting/providers-autoload_dk.md](./troubleshooting/providers-autoload_dk.md)
+- [troubleshooting/provider-setup+installation-troubleshooting-citomni.md](./troubleshooting/provider-setup+installation-troubleshooting-citomni.md)
 
 ## Expected structure (reference)
 
@@ -134,4 +133,4 @@ Below is the planned layout. Some sections may be empty while we migrate content
 
 ---
 _This README was generated automatically._  
-_Last updated: 2025-11-03 22:15:02_
+_Last updated: 2025-11-03 22:33:39_

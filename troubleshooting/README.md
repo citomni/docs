@@ -8,7 +8,6 @@ _Section landing page._
 
 ## Index
 
-- [Providers autoload](./providers-autoload.md)
-- [Providers autoload dk](./providers-autoload_dk.md)
+- [Provider setup+installation troubleshooting citomni](./provider-setup+installation-troubleshooting-citomni.md)
 
 <!-- AUTO-INDEX:END -->
