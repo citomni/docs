@@ -10,7 +10,7 @@ _Section landing page._
 
 - [Controllers authoring and usage](./controllers-authoring-and-usage.md)
 - [Providers build a provider](./providers-build-a-provider.md)
+- [Security service csrf how to](./security-service-csrf-how-to.md)
 - [Services authoring registration usage](./services-authoring-registration-usage.md)
-- [Vars providers auto injecting template variables](./vars_providers-auto-injecting-template-variables.md)
 
 <!-- AUTO-INDEX:END -->
