@@ -12,6 +12,22 @@ This document explains **how to build Services** for CitOmni: What they are, how
 
 ---
 
+## Architecture overview (Registries, config, and routes)
+
+CitOmni uses declarative registries and deterministic merges:
+
+1. Provider packages expose their contributions via `src/Boot/Registry.php`:
+   - `Registry::MAP_HTTP` / `Registry::MAP_CLI` for service bindings
+   - `Registry::CFG_HTTP` / `Registry::CFG_CLI` for config overlays
+   - `Registry::ROUTES_HTTP` for HTTP route definitions (and optionally `ROUTES_CLI` if your app supports CLI routing)
+2. Configuration (`cfg`) and routing are separate concerns:
+   - `cfg` is merged into `$this->app->cfg` and consumed as runtime policy.
+   - Routes are built and cached by `App::buildRoutes()` into `var/cache/routes.{http|cli}.php` and consumed by the Router as routing tables.
+3. Registries must remain declarative:
+   - No I/O, no runtime-dependent branching, no hidden side effects.
+
+---
+
 ## 1) What is a Service?
 
 A **Service** is a small, focused object, instantiated **once per request/process** by the `App` and accessed as a property:
@@ -51,8 +67,10 @@ new \Your\Namespace\Service\X(\CitOmni\Kernel\App $app, array $options = [])
 
 ## 3) Where Services come from (maps & precedence)
 
-CitOmni merges **service maps** deterministically using PHP's array-union semantics (**left-wins per merge step**).
+CitOmni merges **service maps** deterministically using PHP’s `+` array operator semantics (key-preserving; **left operand wins on conflicts per merge step**).
+Config and routes use a deep associative merge where the later layer wins on conflicts.
 This ensures reproducible overrides without reflection or dynamic registration.
+
 
 1. **Vendor baseline map** (per mode)
 
@@ -61,22 +79,25 @@ This ensures reproducible overrides without reflection or dynamic registration.
 
    Defines the foundational services for each runtime mode (router, response, errorHandler, etc.).
 
+   NOTE: Core packages may still use `Boot\Services` as the baseline holder, while reusable provider packages typically expose `Boot\Registry`. The important part is the exported constants, not the file name.
+
 2. **Provider maps** (optional, merged in the order listed in `/config/providers.php`)
 
    * Each provider exposes `Boot\Registry::MAP_HTTP` and/or `MAP_CLI`.
+   * Providers may also expose `Boot\Registry::ROUTES_HTTP` (and optionally `ROUTES_CLI`). These are merged by `App::buildRoutes()` (separate from `cfg` and separate from service map merging).
 
-   During boot, the kernel iterates the provider list **in order** and performs `$map = $pvMap + $map;` for each.
-   Because PHP's array-union preserves the left-hand value on key conflicts, **later providers in the list take precedence** over earlier ones within this step (provider N is merged before provider N−1), yielding: last-listed provider > first-listed provider > vendor baseline.
+   During boot, the kernel iterates the provider list **in listed order** and performs `$map = $pvMap + $map;` at each step.
 
-   The resulting map therefore reflects the deterministic hierarchy:
+   Because the current provider map is always the **left operand**, it overrides earlier providers on key conflicts. Therefore, precedence is deterministic:
    **last-listed provider > first-listed provider > vendor baseline.**
+
+   No reverse iteration is required; the precedence follows directly from the `$pvMap + $map` operation applied in listed order.
 
 3. **Application map** (optional, highest precedence)
 
    * `/config/services.php` - used for **app-local services** or **explicit overrides**.
 
    The kernel finally performs `$map = $appMap + $map;`, ensuring that **the application layer always wins** over all provider and vendor definitions.
-
 
 **Definition shapes**
 
@@ -100,6 +121,8 @@ This ensures reproducible overrides without reflection or dynamic registration.
 * **Options** (the service map's `'options'`) are for **construction-time wiring** only. They are passed as the constructor's 2nd parameter. Keep them minimal and deterministic.
 * **Configuration** (the config tree) expresses **runtime policy**. Read it via the deep, read-only wrapper: `$this->app->cfg`.
 
+Routes are not part of `cfg`. Treat routing as a separate compiled artifact, not a configuration node. Route definitions may be declared by providers (For example via `Registry::ROUTES_HTTP`), but they are merged and cached by `App::buildRoutes()` (and `App::warmCache()` for caching), not via the config merger.
+
 **Config merge order (last wins):**
 
 1. Vendor baseline: `\CitOmni\Http\Boot\Config::CFG` (or CLI)
@@ -110,9 +133,21 @@ This ensures reproducible overrides without reflection or dynamic registration.
 Example reads in a Service:
 
 ```php
+// Cfg is fail-fast on direct access (Unknown keys throw), but supports safe defaults via ??.
+// The null coalescing operator uses Cfg::__isset() and will not trigger __get() when missing.
+
 $csrf = (bool)($this->app->cfg->security->csrf_protection ?? true);
 $tz   = (string)($this->app->cfg->locale->timezone ?? 'UTC');
 ```
+
+Note:
+- Direct access (`$this->app->cfg->x->y`) is **fail-fast** and throws `OutOfBoundsException`
+  if the key does not exist.
+- Using `??` expresses an **optional config value** and relies on `Cfg::__isset()`
+  to avoid triggering `__get()`.
+
+Top-level config nodes that are part of the baseline (e.g. `auth`, `security`)
+are expected to exist and are therefore often accessed without `??` by design.
 
 ---
 
@@ -178,6 +213,8 @@ Anything in `/config/services.php` **wins over** provider maps, which themselves
 ## 7) Authoring a Service (example)
 
 The following example mirrors patterns in core Services. Note that it **does not** import `App` (we don't do that in core Services) and uses your **CitOmni PHPDoc template** precisely.
+
+NOTE: The (old) example below includes a `try/catch (\Throwable)` when reading config. In Services, avoid catch-all error handling unless you have a narrowly justified reason. Prefer deterministic reads and let failures surface to the global error handler. A corrected no-catch variant is included right after the original example, without removing it.
 
 ```php
 <?php
@@ -256,15 +293,74 @@ final class Greeter extends BaseService {
 }
 ```
 
-**Registering (two patterns)**
-
-*Provider map (preferred for reusable packages)*
+**Greeter (No catch-all variant, recommended)**
 
 ```php
-// src/Boot/Services.php
+<?php
+declare(strict_types=1);
+
+namespace Vendor\Package\Service;
+
+use CitOmni\Kernel\Service\BaseService;
+
+/**
+ * Greeter: Deterministic greeting builder with minimal overhead.
+ *
+ * Notes:
+ * - No catch-all error handling. Config access failures bubble to the global handler.
+ */
+final class GreeterNoCatch extends BaseService {
+	private string $suffix = '';
+
+	protected function init(): void {
+		$identity = $this->app->cfg->identity ?? (object)[];
+		$cfgAppName = (string)($identity->app_name ?? '');
+
+		$opt = $this->options;
+		$this->options = [];
+
+		$optSuffix = (string)($opt['suffix'] ?? '');
+		$this->suffix = ($optSuffix !== '')
+			? $optSuffix
+			: ($cfgAppName !== '' ? '- from ' . $cfgAppName : '');
+	}
+
+	public function greet(string $name): string {
+		$name = \trim($name);
+		if ($name === '') {
+			throw new \InvalidArgumentException('Name cannot be empty.');
+		}
+		return 'Hello, ' . $name . ($this->suffix !== '' ? ' ' . $this->suffix : '');
+	}
+}
+```
+
+## Registering
+
+### Provider packages (reusable): `src/Boot/Registry.php`
+
+Provider packages should expose declarative maps via `src/Boot/Registry.php` using `Registry` as the class name. The kernel consumes the exported constants (IDs and shapes), not the file name “logic”.
+
+```php
+<?php
+declare(strict_types=1);
+
 namespace Vendor\Package\Boot;
 
-final class Services {
+final class Registry {
+
+	/**
+	 * Service map contributions for HTTP mode.
+	 *
+	 * Shape rules:
+	 * - 'id' => FQCN string, OR
+	 * - 'id' => ['class' => FQCN string, 'options' => array]
+	 * - Malformed entries should fail fast during boot (App validates map shapes).
+	 *
+	 * Notes:
+	 * - Keep registries declarative: No I/O, no runtime branching.
+	 * - Options are construction-time wiring only (2nd ctor arg).
+	 */
 	public const MAP_HTTP = [
 		'greeter' => [
 			'class'   => \Vendor\Package\Service\Greeter::class,
@@ -272,29 +368,71 @@ final class Services {
 		],
 	];
 
+	/**
+	 * Config overlay contributions for HTTP mode.
+	 *
+	 * Notes:
+	 * - Config is merged into $this->app->cfg as runtime policy.
+	 * - Later layers win on conflicts (deep merge).
+	 */
 	public const CFG_HTTP = [
 		'identity' => ['app_name' => 'My App'], // example; optional
 	];
 
+	/**
+	 * Route contributions for HTTP mode.
+	 *
+	 * Notes:
+	 * - Routes are NOT part of cfg.
+	 * - Routes are merged/cached by App::buildRoutes() into var/cache/routes.http.php.
+	 * - Keep route entries deterministic and side-effect free.
+	 */
+	public const ROUTES_HTTP = [
+		'/greeter' => [
+			'controller' => \Vendor\Package\Controller\GreeterController::class,
+			'action'     => 'index',
+			'methods'    => ['GET'],
+		],
+	];
+
+	/**
+	 * CLI mode contributions (optional).
+	 *
+	 * Notes:
+	 * - If your package provides CLI services/config, define these explicitly.
+	 * - You may alias HTTP maps when they are identical.
+	 */
 	public const MAP_CLI = self::MAP_HTTP;
 	public const CFG_CLI = self::CFG_HTTP;
+	// public const ROUTES_CLI = [...]; // only if your app supports CLI routing
 }
 ```
 
-*Application override/definition*
+---
+
+### Application layer (app-local or overrides): `/config/services.php`
+
+Use `/config/services.php` to add app-local services or override vendor/provider IDs. This layer has the highest precedence.
 
 ```php
-// /config/services.php
 <?php
+declare(strict_types=1);
+
 return [
+	// New app-local service:
 	'greeter' => [
 		'class'   => \App\Service\Greeter::class,
 		'options' => ['suffix' => '- from My App'],
 	],
+
+	// Override an existing ID by reusing the same key:
+	// 'response' => \App\Http\Response::class,
 ];
 ```
 
-**Using it**
+---
+
+### Using it
 
 ```php
 $msg = $this->app->greeter->greet('World');
@@ -415,6 +553,8 @@ A few Services participate directly in boot/guard/dispatch and are **invoked by 
 
 These Services still **conform** to the same constructor contract and map semantics, but their **lifecycle and call sites** are special (Kernel-controlled). Treat them as **infrastructure**: They must be exceptionally defensive about state (e.g., headers already sent), avoid recursion, and keep work minimal.
 
+Router consumes the compiled route table (Built by `App::buildRoutes()` or loaded from `var/cache/routes.{http|cli}.php`) and does not read routes from `$this->app->cfg`. Keep route data out of config. Provider packages may declare routes in `Registry::ROUTES_HTTP`, but these are compiled into the route cache and consumed by the Router from there.
+
 ---
 
 ## 10) Performance and caching
@@ -426,7 +566,9 @@ These Services still **conform** to the same constructor contract and map semant
 
   * `var/cache/cfg.{http|cli}.php`
   * `var/cache/services.{http|cli}.php`
-  * Note: Route caches are built by the routes builder and are orthogonal to service caches; Services do not need to touch them.
+  * Note: Route caches are written by `App::warmCache()` (via `App::buildRoutes()`) and are orthogonal to service caches; Services do not need to touch them.
+
+You will typically also have a separate route cache file, for example `var/cache/routes.{http|cli}.php`. Its exact name is owned by the kernel implementation (`App::buildRoutes()` / `App::warmCache()`), not by Services.
 
 * In production with `opcache.validate_timestamps=0`, invalidate per file or call `opcache_reset()` post-deploy.
 
@@ -437,6 +579,8 @@ These Services still **conform** to the same constructor contract and map semant
 * Services may throw **SPL** exceptions for invalid inputs/state (`InvalidArgumentException`, `RuntimeException`, ...).
 * Do **not** install try/catch "umbrellas" in Services; fail fast and let the global ErrorHandler decide how to render/log.
 * If your Service performs OS/IO operations, validate **before** acting (paths exist? permissions? quotas?) to fail deterministically with clear messages.
+
+If you find yourself wanting to catch `\Throwable` inside a Service, treat it as a design smell. Prefer to restructure the service API so it either validates inputs deterministically up front, or lets failures surface to the global handler.
 
 ---
 
@@ -454,6 +598,8 @@ public function testGreeter(): void {
 
 For config-dependent behavior, put a **minimal** tree in a `config/` fixture and let `App` build it.
 
+Service tests should not assume any route-related config nodes exist. If a service truly depends on routing (Rare), depend on a narrow service API you own rather than reaching into internal route maps.
+
 ---
 
 ## 13) FAQ
@@ -461,11 +607,20 @@ For config-dependent behavior, put a **minimal** tree in a `config/` fixture and
 **Q: When should I use `/config/services.php` vs a provider map?**
 A: Use a provider map when the Service belongs to a **reusable package**. Use `/config/services.php` when the Service is **app-local** or you want to **override** an existing ID in this specific app.
 
+When authoring a reusable package, prefer `src/Boot/Registry.php` with `Registry::MAP_HTTP`, `Registry::CFG_HTTP`, etc. This avoids ambiguity about whether the file contains boot logic. It is a registry, not a runtime service.
+
 **Q: Can I pass secrets via service options?**
 A: Prefer **config + secrets files** (e.g., `/var/secrets/*.php` referenced in config). Options are fine for **non-sensitive wiring** only.
 
 **Q: How do Services relate to routes?**
-A: Routes are compiled by a dedicated builder into their own cache (per mode) and consumed by the Router. Services should not read routes from config; they typically don't need route data at all. If you truly must inspect routing, do it via a narrow, explicit API you own-never by poking into internal route maps.
+A: Routes are built per mode and cached into `var/cache/routes.{http|cli}.php`. The route table is merged in this order (Last wins per key, deep for assoc arrays):
+
+1. Vendor baseline routes: `\CitOmni\Http\Boot\Routes::MAP_HTTP` or `\CitOmni\Cli\Boot\Routes::MAP_CLI` (If defined and non-empty).
+2. Provider routes from `/config/providers.php`: `FQCN::ROUTES_HTTP` / `FQCN::ROUTES_CLI` (If defined and non-empty).
+3. App base routes: `/config/citomni_{http|cli}_routes.php` (If present and non-empty).
+4. App env routes: `/config/citomni_{http|cli}_routes.{ENV}.php` (Optional).
+
+Route definitions may be declared by the app and by provider packages (For example via `Registry::ROUTES_HTTP`), but routes are still not part of `cfg`. Services should not read routes from config; they typically don't need route data at all. If you truly must inspect routing, do it via a narrow, explicit API you own-never by poking into internal route maps.
 
 ---
 
@@ -479,6 +634,8 @@ A: Routes are compiled by a dedicated builder into their own cache (per mode) an
 * [ ] If the service will run on hot paths, measure allocations and avoid avoidable work.
 * [ ] Registered via provider map or `/config/services.php`, as appropriate.
 * [ ] Documented with the **CitOmni PHPDoc template**.
+
+For provider packages, ensure your registry class name and file name are aligned (`Registry` in `Registry.php`) and that routes remain separate from config unless you are deliberately exporting route maps in the provider layer for the dedicated routes builder.
 
 ---
 
