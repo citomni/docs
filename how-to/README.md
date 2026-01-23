@@ -10,8 +10,10 @@ _Section landing page._
 
 - [Admin ui utilities how to](./admin-ui-utilities-how-to.md)
 - [Controllers authoring and usage](./controllers-authoring-and-usage.md)
+- [Exception handling pattern](./exception-handling-pattern.md)
 - [Providers build a provider](./providers-build-a-provider.md)
 - [Security service csrf how to](./security-service-csrf-how-to.md)
 - [Services authoring registration usage](./services-authoring-registration-usage.md)
+- [UploadRename usage guide](./uploadRename_usage-guide.md)
 
 <!-- AUTO-INDEX:END -->
