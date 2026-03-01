@@ -8,7 +8,7 @@ This document explains **how to build Services** for CitOmni: What they are, how
 * PSR-1 / PSR-4
 * Tabs for indentation, **K&R** brace style
 * English PHPDoc and inline comments
-* No catch-all exception handling in Services (let the global error handler handle failures)
+* Fail fast by default; use try/catch only when failure is genuinely recoverable and the fallback is explicit.
 
 ---
 
@@ -112,7 +112,7 @@ This ensures reproducible overrides without reflection or dynamic registration.
 ],
 ```
 
-> The `App` enforces this structure strictly; any malformed entry fails fast during boot.
+> The `App` enforces this structure strictly; any malformed entry fails fast on first access.
 
 ---
 
@@ -214,7 +214,7 @@ Anything in `/config/services.php` **wins over** provider maps, which themselves
 
 The following example mirrors patterns in core Services. Note that it **does not** import `App` (we don't do that in core Services) and uses your **CitOmni PHPDoc template** precisely.
 
-NOTE: The (old) example below includes a `try/catch (\Throwable)` when reading config. In Services, avoid catch-all error handling unless you have a narrowly justified reason. Prefer deterministic reads and let failures surface to the global error handler. A corrected no-catch variant is included right after the original example, without removing it.
+NOTE: The example below includes a try/catch when reading config. This is acceptable when the fallback is explicit and meaningful. For most services, the no-catch variant below is preferred. Prefer deterministic reads and let failures surface to the global error handler. A corrected no-catch variant is included right after the original example, without removing it.
 
 ```php
 <?php
@@ -580,7 +580,7 @@ You will typically also have a separate route cache file, for example `var/cache
 * Do **not** install try/catch "umbrellas" in Services; fail fast and let the global ErrorHandler decide how to render/log.
 * If your Service performs OS/IO operations, validate **before** acting (paths exist? permissions? quotas?) to fail deterministically with clear messages.
 
-If you find yourself wanting to catch `\Throwable` inside a Service, treat it as a design smell. Prefer to restructure the service API so it either validates inputs deterministically up front, or lets failures surface to the global handler.
+If you find yourself wanting to catch `\Throwable` inside a Service, treat it as a design smell first — prefer to restructure. However, try/catch is legitimate when failure is genuinely recoverable and the fallback is explicit and documented. Critical boot infrastructure (e.g. ErrorHandler) is a justified exception, as it cannot rely on itself to handle its own boot failure.
 
 ---
 
@@ -626,7 +626,8 @@ Route definitions may be declared by the app and by provider packages (For examp
 
 ## 14) Authoring checklist
 
-* [ ] Class is `final`, PSR-4, K&R, **tabs**, English docs.
+* [ ] Class is `final` by default - omit only when deliberately designed for extension - mark extension points `protected` and document them in PHPDoc).
+* [ ] Use PSR-4, K&R, **tabs**, English docs
 * [ ] Constructor contract is respected (but **not** called manually).
 * [ ] `init()` is either empty or merges options with config deterministically and is **cheap**.
 * [ ] Public methods have clear contracts and **SPL throws** on invalid input.
