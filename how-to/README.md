@@ -9,6 +9,7 @@ _Section landing page._
 ## Index
 
 - [Admin ui utilities how to](./admin-ui-utilities-how-to.md)
+- [CitOmni+LiteMySQLi Cheat Sheet (Ground Truth) daDK](./CitOmni+LiteMySQLi_Cheat_Sheet_(Ground_Truth)-daDK.md)
 - [Controllers authoring and usage](./controllers-authoring-and-usage.md)
 - [Exception handling pattern](./exception-handling-pattern.md)
 - [Providers build a provider](./providers-build-a-provider.md)

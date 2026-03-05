@@ -9,7 +9,7 @@ _Section landing page._
 ## Index
 
 - [Admin url structure http](./admin-url-structure-http.md)
-- [App structure](./app-structure.md)
+- [Architecture](./architecture.md)
 - [Maintenance mode](./maintenance-mode.md)
 - [Maintenance mode dk](./maintenance-mode_dk.md)
 - [Routing layer http runtime](./routing-layer-http-runtime.md)

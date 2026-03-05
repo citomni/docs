@@ -9,7 +9,7 @@ This repository hosts the public documentation for the CitOmni Framework.
 ### concepts
 - [concepts/README.md](./concepts/README.md)
 - [concepts/admin-url-structure-http.md](./concepts/admin-url-structure-http.md)
-- [concepts/app-structure.md](./concepts/app-structure.md)
+- [concepts/architecture.md](./concepts/architecture.md)
 - [concepts/maintenance-mode.md](./concepts/maintenance-mode.md)
 - [concepts/maintenance-mode_dk.md](./concepts/maintenance-mode_dk.md)
 - [concepts/routing-layer-http-runtime.md](./concepts/routing-layer-http-runtime.md)
@@ -30,6 +30,7 @@ This repository hosts the public documentation for the CitOmni Framework.
 ### how-to
 - [how-to/README.md](./how-to/README.md)
 - [how-to/admin-ui-utilities-how-to.md](./how-to/admin-ui-utilities-how-to.md)
+- [how-to/CitOmni+LiteMySQLi_Cheat_Sheet_(Ground_Truth)-daDK.md](./how-to/CitOmni+LiteMySQLi_Cheat_Sheet_(Ground_Truth)-daDK.md)
 - [how-to/controllers-authoring-and-usage.md](./how-to/controllers-authoring-and-usage.md)
 - [how-to/exception-handling-pattern.md](./how-to/exception-handling-pattern.md)
 - [how-to/providers-build-a-provider.md](./how-to/providers-build-a-provider.md)
@@ -136,4 +137,4 @@ Below is the planned layout. Some sections may be empty while we migrate content
 
 ---
 _This README was generated automatically._  
-_Last updated: 2026-01-23 01:10:20_
+_Last updated: 2026-03-06 00:34:31_
