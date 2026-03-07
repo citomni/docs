@@ -13,6 +13,7 @@ _Section landing page._
 - [Controllers authoring and usage](./controllers-authoring-and-usage.md)
 - [Db service usage](./db-service-usage.md)
 - [Exception handling pattern](./exception-handling-pattern.md)
+- [Log service usage](./log-service-usage.md)
 - [Migrate from litemysqli to db service](./migrate-from-litemysqli-to-db-service.md)
 - [Providers build a provider](./providers-build-a-provider.md)
 - [Security service csrf how to](./security-service-csrf-how-to.md)

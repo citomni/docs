@@ -35,6 +35,7 @@ This repository hosts the public documentation for the CitOmni Framework.
 - [how-to/controllers-authoring-and-usage.md](./how-to/controllers-authoring-and-usage.md)
 - [how-to/db-service-usage.md](./how-to/db-service-usage.md)
 - [how-to/exception-handling-pattern.md](./how-to/exception-handling-pattern.md)
+- [how-to/log-service-usage.md](./how-to/log-service-usage.md)
 - [how-to/migrate-from-litemysqli-to-db-service.md](./how-to/migrate-from-litemysqli-to-db-service.md)
 - [how-to/providers-build-a-provider.md](./how-to/providers-build-a-provider.md)
 - [how-to/security-service-csrf-how-to.md](./how-to/security-service-csrf-how-to.md)
@@ -141,4 +142,4 @@ Below is the planned layout. Some sections may be empty while we migrate content
 
 ---
 _This README was generated automatically._  
-_Last updated: 2026-03-07 20:27:51_
+_Last updated: 2026-03-07 20:51:04_
