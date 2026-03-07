@@ -9,5 +9,6 @@ _Section landing page._
 ## Index
 
 - [Flash service](./flash-service.md)
+- [Log service](./log-service.md)
 
 <!-- AUTO-INDEX:END -->
