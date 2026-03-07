@@ -10,5 +10,6 @@ _Section landing page._
 
 - [Flash service](./flash-service.md)
 - [Log service](./log-service.md)
+- [Txt service](./txt-service.md)
 
 <!-- AUTO-INDEX:END -->
