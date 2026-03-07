@@ -10,6 +10,7 @@ This repository hosts the public documentation for the CitOmni Framework.
 - [concepts/README.md](./concepts/README.md)
 - [concepts/admin-url-structure-http.md](./concepts/admin-url-structure-http.md)
 - [concepts/architecture.md](./concepts/architecture.md)
+- [concepts/database-service.md](./concepts/database-service.md)
 - [concepts/maintenance-mode.md](./concepts/maintenance-mode.md)
 - [concepts/maintenance-mode_dk.md](./concepts/maintenance-mode_dk.md)
 - [concepts/routing-layer-http-runtime.md](./concepts/routing-layer-http-runtime.md)
@@ -32,7 +33,9 @@ This repository hosts the public documentation for the CitOmni Framework.
 - [how-to/admin-ui-utilities-how-to.md](./how-to/admin-ui-utilities-how-to.md)
 - [how-to/CitOmni+LiteMySQLi_Cheat_Sheet_(Ground_Truth)-daDK.md](./how-to/CitOmni+LiteMySQLi_Cheat_Sheet_(Ground_Truth)-daDK.md)
 - [how-to/controllers-authoring-and-usage.md](./how-to/controllers-authoring-and-usage.md)
+- [how-to/db-service-usage.md](./how-to/db-service-usage.md)
 - [how-to/exception-handling-pattern.md](./how-to/exception-handling-pattern.md)
+- [how-to/migrate-from-litemysqli-to-db-service.md](./how-to/migrate-from-litemysqli-to-db-service.md)
 - [how-to/providers-build-a-provider.md](./how-to/providers-build-a-provider.md)
 - [how-to/security-service-csrf-how-to.md](./how-to/security-service-csrf-how-to.md)
 - [how-to/services-authoring-registration-usage.md](./how-to/services-authoring-registration-usage.md)
@@ -137,4 +140,4 @@ Below is the planned layout. Some sections may be empty while we migrate content
 
 ---
 _This README was generated automatically._  
-_Last updated: 2026-03-06 00:34:31_
+_Last updated: 2026-03-07 03:32:35_
