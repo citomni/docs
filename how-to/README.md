@@ -4,6 +4,16 @@ _Section landing page._
 
 - [Back to Docs Home](../README.md)
 
+<!-- SECTION-INFO:BEGIN -->
+
+## About this section
+
+How-to documents explain how to perform specific tasks in CitOmni.
+
+They are practical implementation guides focused on concrete outcomes such as building, configuring, integrating, or operating framework features.
+
+<!-- SECTION-INFO:END -->
+
 <!-- AUTO-INDEX:BEGIN -->
 
 ## Index

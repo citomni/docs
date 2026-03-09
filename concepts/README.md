@@ -4,6 +4,16 @@ _Section landing page._
 
 - [Back to Docs Home](../README.md)
 
+<!-- SECTION-INFO:BEGIN -->
+
+## About this section
+
+Concept documents explain the architectural ideas, design principles, and structural decisions that shape CitOmni.
+
+They describe how the framework is intended to work and why particular patterns, boundaries, or runtime rules exist.
+
+<!-- SECTION-INFO:END -->
+
 <!-- AUTO-INDEX:BEGIN -->
 
 ## Index

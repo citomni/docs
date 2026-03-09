@@ -69,6 +69,7 @@ This repository hosts the public documentation for the CitOmni Framework.
 - [reports/2025-10-02-capacity-and-green-by-design.md](./reports/2025-10-02-capacity-and-green-by-design.md)
 
 ### research
+- [research/README.md](./research/README.md)
 - [research/transport-agnostic-action-layering-2026-03-09.md](./research/transport-agnostic-action-layering-2026-03-09.md)
 
 ### troubleshooting
@@ -146,4 +147,4 @@ Below is the planned layout. Some sections may be empty while we migrate content
 
 ---
 _This README was generated automatically._  
-_Last updated: 2026-03-09 12:39:30_
+_Last updated: 2026-03-09 14:44:20_

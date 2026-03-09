@@ -26,7 +26,33 @@ const SECTION_INFO_BEGIN = '<!-- SECTION-INFO:BEGIN -->';
 const SECTION_INFO_END   = '<!-- SECTION-INFO:END -->';
 
 const README_DESCRIPTIONS = [
+	'concepts' => "Concept documents explain the architectural ideas, design principles, and structural decisions that shape CitOmni.\n\nThey describe how the framework is intended to work and why particular patterns, boundaries, or runtime rules exist.",
+
+	'contribute' => "Contribution documents describe the conventions, expectations, and practical workflows used when improving CitOmni.\n\nThey are intended for contributors who need clear rules for authoring, testing, reviewing, and maintaining framework code and documentation.",
+
+	'cookbook' => "Cookbook documents provide practical, example-driven solutions for common tasks in CitOmni.\n\nThey focus on applied patterns and ready-to-adapt recipes rather than full reference material or deep architectural discussion.",
+
+	'get-started' => "Get-started documents help new users become productive with CitOmni as quickly as possible.\n\nThey introduce the framework, its structure, and the minimum practical steps needed to begin building or running an application.",
+
+	'how-to' => "How-to documents explain how to perform specific tasks in CitOmni.\n\nThey are practical implementation guides focused on concrete outcomes such as building, configuring, integrating, or operating framework features.",
+
+	'legal' => "Legal documents cover legal, licensing, ownership, and related framework governance matters for CitOmni.\n\nThey define the formal legal context around the project rather than implementation details or usage guidance.",
+
+	'packages' => "Package documents describe CitOmni packages, their roles, boundaries, and intended responsibilities within the wider framework ecosystem.\n\nThey help readers understand how the framework is divided into installable units and how those units fit together.",
+
+	'policies' => "Policy documents define mandatory or strongly recommended rules for how CitOmni should be used, implemented, or operated in specific areas.\n\nThey are normative documents intended to reduce ambiguity and keep framework behavior consistent.",
+
+	'programs' => "Program documents describe bundled utilities, scripts, commands, or other executable framework-adjacent tools used within the CitOmni ecosystem.\n\nThey focus on what those programs do, when they should be used, and any relevant operational context.",
+
+	'reference' => "Reference documents define the formal behavior, contracts, configuration model, and runtime semantics of specific CitOmni components.\n\nThey are intended to be authoritative technical documentation for developers who need exact and stable information.",
+
+	'release-notes' => "Release-notes documents record notable changes between versions of CitOmni.\n\nThey provide a historical view of additions, changes, fixes, and other developments relevant to framework users and maintainers.",
+
+	'reports' => "Report documents capture findings, evaluations, measurements, or structured summaries related to CitOmni.\n\nThey typically document observed results or concluded analysis rather than prescribing framework rules.",
+
 	'research' => "Research documents are exploratory working papers used to investigate, compare, question, and discuss possible directions for CitOmni's continued development.\n\nThey are not automatically normative, canonical, or final framework documentation.",
+
+	'troubleshooting' => "Troubleshooting documents help diagnose, explain, and resolve problems encountered while installing, configuring, developing with, or operating CitOmni.\n\nThey focus on practical problem-solving, common failure modes, and corrective actions.",
 ];
 
 function normPath(string $path): string {
