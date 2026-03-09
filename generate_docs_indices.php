@@ -22,6 +22,12 @@ const EXCLUDE_DIRS = ['/.git/', '/site/', '/assets/'];
 const SUPPORT_EMAIL = 'support@citomni.com';
 const AUTO_BEGIN = '<!-- AUTO-INDEX:BEGIN -->';
 const AUTO_END   = '<!-- AUTO-INDEX:END -->';
+const SECTION_INFO_BEGIN = '<!-- SECTION-INFO:BEGIN -->';
+const SECTION_INFO_END   = '<!-- SECTION-INFO:END -->';
+
+const README_DESCRIPTIONS = [
+	'research' => "Research documents are exploratory working papers used to investigate, compare, question, and discuss possible directions for CitOmni's continued development.\n\nThey are not automatically normative, canonical, or final framework documentation.",
+];
 
 function normPath(string $path): string {
 	$path = str_replace('\\', '/', $path);
@@ -93,15 +99,74 @@ function topLevelOf(string $relativePath): string {
 	return $pos === false ? '(root)' : substr($relativePath, 0, $pos);
 }
 
-function replaceAutoIndexBlock(string $existing, string $newBlock): string {
-	$begin = preg_quote(AUTO_BEGIN, '/');
-	$end = preg_quote(AUTO_END, '/');
+function replaceManagedBlock(string $existing, string $beginMarker, string $endMarker, string $newBlock): string {
+	$begin = preg_quote($beginMarker, '/');
+	$end = preg_quote($endMarker, '/');
 	$pattern = "/{$begin}.*?{$end}/s";
+
 	if (preg_match($pattern, $existing)) {
 		return preg_replace($pattern, $newBlock, $existing) ?? $existing;
 	}
-	// No block found: append at end with spacing.
+
 	return rtrim($existing) . "\n\n" . $newBlock . "\n";
+}
+
+function removeManagedBlock(string $existing, string $beginMarker, string $endMarker): string {
+	$begin = preg_quote($beginMarker, '/');
+	$end = preg_quote($endMarker, '/');
+	$pattern = "/\n*\s*{$begin}.*?{$end}\n*/s";
+
+	$updated = preg_replace($pattern, "\n\n", $existing);
+
+	if (!is_string($updated)) {
+		return $existing;
+	}
+
+	$updated = preg_replace("/\n{3,}/", "\n\n", $updated) ?? $updated;
+	return rtrim($updated) . "\n";
+}
+
+function replaceAutoIndexBlock(string $existing, string $newBlock): string {
+	return replaceManagedBlock($existing, AUTO_BEGIN, AUTO_END, $newBlock);
+}
+
+function getReadmeDescription(string $absDir, string $root): string {
+	$relDir = trim(relFromRoot($absDir, $root), '/');
+	return README_DESCRIPTIONS[$relDir] ?? '';
+}
+
+function buildSectionInfoBlock(string $absDir, string $root): string {
+	$description = trim(getReadmeDescription($absDir, $root));
+
+	if ($description === '') {
+		return '';
+	}
+
+	$lines = [];
+	$lines[] = SECTION_INFO_BEGIN;
+	$lines[] = '';
+	$lines[] = '## About this section';
+	$lines[] = '';
+	$lines[] = $description;
+	$lines[] = '';
+	$lines[] = SECTION_INFO_END;
+
+	return implode("\n", $lines);
+}
+
+function insertBlockBeforeAutoIndex(string $existing, string $block): string {
+	$autoBeginQuoted = preg_quote(AUTO_BEGIN, '/');
+	$pattern = "/\n*{$autoBeginQuoted}/";
+
+	if (preg_match($pattern, $existing, $matches, PREG_OFFSET_CAPTURE) === 1) {
+		$offset = $matches[0][1];
+		$before = rtrim(substr($existing, 0, $offset));
+		$after = ltrim(substr($existing, $offset), "\n");
+
+		return $before . "\n\n" . $block . "\n\n" . $after;
+	}
+
+	return rtrim($existing) . "\n\n" . $block . "\n";
 }
 
 function directoryHasContentToIndex(string $absDir, string $root): bool {
@@ -174,31 +239,57 @@ function buildAutoIndexBlock(string $absDir, string $root): string {
 	return implode("\n", $lines);
 }
 
-/**
- * Ensure a directory README exists; if not, create a minimal header + auto block.
- * If exists, update only the auto block.
- */
 function ensureDirectoryReadme(string $absDir, string $root): void {
 	$readme = rtrim($absDir, '/') . '/README.md';
+	$sectionInfo = buildSectionInfoBlock($absDir, $root);
 	$auto = buildAutoIndexBlock($absDir, $root);
 
 	if (!file_exists($readme)) {
 		$title = basename($absDir);
-		$hdr = '# ' . $title . "\n\n" . "_Section landing page._\n\n" . '- [Back to Docs Home](../README.md)' . "\n\n";
-		file_put_contents($readme, $hdr . $auto . "\n");
+
+		$parts = [];
+		$parts[] = '# ' . $title;
+		$parts[] = '';
+		$parts[] = '_Section landing page._';
+		$parts[] = '';
+		$parts[] = '- [Back to Docs Home](../README.md)';
+		$parts[] = '';
+
+		if ($sectionInfo !== '') {
+			$parts[] = $sectionInfo;
+			$parts[] = '';
+		}
+
+		$parts[] = $auto;
+		$parts[] = '';
+
+		file_put_contents($readme, implode("\n", $parts));
 		return;
 	}
 
 	$existing = file_get_contents($readme) ?: '';
-	$updated = replaceAutoIndexBlock($existing, $auto);
+	$updated = $existing;
+
+	// First update/remove the managed section-info block.
+	if ($sectionInfo !== '') {
+		if (str_contains($updated, SECTION_INFO_BEGIN)) {
+			$updated = replaceManagedBlock($updated, SECTION_INFO_BEGIN, SECTION_INFO_END, $sectionInfo);
+		} else {
+			$updated = insertBlockBeforeAutoIndex($updated, $sectionInfo);
+		}
+	} else {
+		$updated = removeManagedBlock($updated, SECTION_INFO_BEGIN, SECTION_INFO_END);
+	}
+
+	// Then update the auto-index block.
+	$updated = replaceAutoIndexBlock($updated, $auto);
+
 	if ($updated !== $existing) {
 		file_put_contents($readme, $updated);
 	}
 }
 
-/**
- * Generate the root README with grouped index.
- */
+
 function generateRootReadme(string $root): void {
 	$rii = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS));
 
