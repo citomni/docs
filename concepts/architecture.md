@@ -44,10 +44,10 @@ CitOmni structures the codebase into six primary categories, each with a strict 
 	- Transport-specific entry points for HTTP and CLI.
 	- They translate external inputs into internal data shapes, and internal results into transport outputs.
 
-- Core
-	- Transport-agnostic orchestration and domain rules.
-	- Core is SQL-free and does not shape transport output.
-	- Core may call services and repositories via the App, hence Core is not academically side-effect-free.
+- Operation
+	- Transport-agnostic orchestration and application-level decision logic.
+	- Operations are SQL-free and do not shape transport output.
+	- Operations may call services and repositories via the App, hence Operations are not academically side-effect-free.
 
 - Repository
 	- Persistence boundary, owning all SQL and datastore IO.
@@ -69,7 +69,7 @@ CitOmni structures the codebase into six primary categories, each with a strict 
 A practical reading is.
 
 - Adapters speak protocols.
-- Core decides what happens.
+- Operations decide what happens.
 - Repositories talk to storage.
 - Services provide tools.
 - Utils compute.
@@ -86,12 +86,12 @@ The canonical directory structure for application and provider package code is.
 	- CLI adapters.
 	- Argument parsing, output formatting, exit codes.
 
-- `src/Core/`
-	- The primary program logic.
-	- Orchestrators and domain rules.
+- `src/Operation/`
+	- The primary transport-agnostic orchestration layer.
+	- Operations coordinate business actions and decision flow.
 	- SQL-free and transport-agnostic.
 	- Returns domain-shaped arrays rather than Response objects.
-	- Core classes extend `BaseCore` and are instantiated explicitly by adapters (Controllers/Commands) using `new ...($this->app)`.
+	- Operation classes extend `BaseOperation` and are instantiated explicitly by adapters (Controllers/Commands) using `new ...($this->app)`.
 
 - `src/Repository/`
 	- Persistence boundary.
@@ -124,9 +124,9 @@ Additionally.
 - `language/`
 	- Language files used by the text service.
 
-The legacy “Model layer” is split into two explicit concerns.
+The legacy "Model layer" is split into two explicit concerns.
 
-- Core absorbs orchestration and domain rules.
+- Operation absorbs orchestration and application-level decision logic.
 - Repository absorbs persistence and SQL.
 
 ### Complete Layout: Application Layer
@@ -134,7 +134,7 @@ The legacy “Model layer” is split into two explicit concerns.
 /app-root									// Project root
 	/src									// Application code (PSR-4: App\ -> src/)
 		/Http								// HTTP delivery layer (web-only concerns)
-			/Controller						// Thin controllers delegating to Services/Core (no heavy business logic here)
+			/Controller						// Thin controllers delegating to Services/Operations (no heavy business logic here)
 			/Exception						// HTTP-specific exceptions (status mapping, user-facing error handling)
 			// Optional as app grows:
 			// /Middleware					// Request/response middleware (auth, rate-limit, etc.)
@@ -142,22 +142,22 @@ The legacy “Model layer” is split into two explicit concerns.
 			// /Responder					// View models/emitters (HTML/JSON), formatting only
 
 		/Cli								// CLI delivery layer (terminal-only concerns)
-			/Command						// Thin commands delegating to Services/Core
+			/Command						// Thin commands delegating to Services/Operations
 			/IO								// Helpers for prompts, tables, progress, etc.
 			/Schedule						// Cron/recurring job descriptors (what runs, when, and with what args)
 			/Exception						// CLI-specific exceptions (exit code mapping, CLI-friendly messages)
 
-		/Service							// Application/domain services (shared by HTTP & CLI)
-											// Orchestrates reusable business logic; can call Repository/Core as needed.
+		/Service							// Application/domain services (shared tools registered in the service map)
+											// Reusable, App-aware infrastructure and cross-cutting capabilities.
 
 		/Repository							// Persistence layer (DB access, queries, mappers)
-											// Everything that knows SQL/schema/resultsets; ideally no HTTP/CLI knowledge.
+											// Everything that knows SQL/schema/resultsets; no HTTP/CLI concerns.
 
-		/Core								// App-internal building blocks (instantiated directly)
-											// Small deterministic components/value objects/helpers; not necessarily in service-map.
+		/Operation							// Transport-agnostic orchestration layer
+											// Explicitly instantiated units coordinating business actions and state transitions.
 
 		/Exception							// Transport-agnostic app/domain exceptions
-											// Shared across HTTP & CLI; thrown by Service/Repository/Core as appropriate.
+											// Shared across HTTP & CLI; thrown by Service/Repository/Operation as appropriate.
 
 
 	/config									// Base config + env overlays + wiring points (providers/services/routes)
@@ -183,7 +183,7 @@ The legacy “Model layer” is split into two explicit concerns.
 
 
 	/language								// Translations (kept outside webroot)
-		/en									// English strings (usually the “source language”)
+		/en									// English strings (usually the "source language")
 		/da									// Danish strings
 		/.htaccess							// Defense-in-depth: deny web access if language folder becomes web-accessible
 
@@ -274,14 +274,14 @@ The legacy “Model layer” is split into two explicit concerns.
 												// Read by App::buildServices() through the mode package integration.
 
 		/Kernel.php								// Central runtime kernel for the mode (boot + run loop)
-												// HTTP: handles request lifecycle, routing, controller dispatch, error handling, response emit
-												// CLI:  handles argv parsing, command dispatch, exit codes, error handling
+												// HTTP: Handles request lifecycle, routing, controller dispatch, error handling, response emit
+												// CLI: Handles argv parsing, command dispatch, exit codes, error handling
 
 		/Controller								// (HTTP) Controllers shipped by the package (framework-level controllers if any)
 		/Command									// (CLI) Commands shipped by the package (framework-level commands if any)
 
-		/Core									// Internal building blocks (instantiated directly inside the package)
-												// Keep deterministic and low-overhead.
+		/Operation								// Internal transport-agnostic orchestration units
+												// Keep deterministic, SQL-free, and low-overhead.
 
 		/Repository								// Persistence layer (optional; only if the mode package touches DB)
 		/Service									// Services used by the mode package internally (routing, templating, csrf, etc.)
@@ -289,7 +289,7 @@ The legacy “Model layer” is split into two explicit concerns.
 		/Exception								// Package exceptions (typically transport-aware for the mode)
 
 	/templates									// Templates/layouts shipped by the mode package (optional)
-		/public									// Public templates (HTTP-only, e.g., maintenance, error pages)
+		/public									// Public templates (HTTP-only, e.g. maintenance, error pages)
 		/member									// Optional: member templates (if the mode package ships any shared member UI)
 		/admin									// Optional: admin templates (if the mode package ships any shared admin UI)
 
@@ -325,20 +325,20 @@ The legacy “Model layer” is split into two explicit concerns.
 		/Command									// Optional: CLI commands shipped by the package
 												// Only used if the package exposes CLI commands.
 
-		/Core									// Package-internal building blocks (instantiated directly)
-												// Small deterministic components, value objects, helpers.
+		/Operation								// Package transport-agnostic orchestration layer
+												// Explicitly instantiated units coordinating business actions.
 
 		/Repository								// Persistence layer (DB access, queries, mappers)
 												// Everything that knows SQL/schema/resultsets; no HTTP/CLI concerns.
 
-		/Service									// Application/domain services (reusable business logic)
-												// Orchestrates flow; can call Repository/Core/Util.
+		/Service									// Reusable App-aware services registered in the service map
+												// Infrastructure and cross-cutting capabilities.
 
 		/Util									// Small stateless helpers (pure functions / tiny utilities)
-												// Keep focused. If it grows state/IO, consider Core or Service.
+												// Keep focused. If it grows state/IO, consider Operation or Service.
 
 		/Exception								// Transport-agnostic package exceptions
-												// Thrown by Service/Repository/Core; mapped by delivery layer if needed.
+												// Thrown by Service/Repository/Operation; mapped by delivery layer if needed.
 
 	/templates									// Templates/layouts/partials shipped by the package (optional)
 		/public									// Public templates (marketing pages, public endpoints)
@@ -349,8 +349,7 @@ The legacy “Model layer” is split into two explicit concerns.
 
 
 ## Instantiation And Base Class Contracts
-CitOmni uses explicit, deterministic wiring. Each category has a simple, reviewable
-instantiation contract.
+CitOmni uses explicit, deterministic wiring. Each category has a simple, reviewable instantiation contract.
 
 - Controllers (`src/Controller/`)
 	- Mode/Provider packages: `src/Controller/`
@@ -364,8 +363,8 @@ instantiation contract.
 	- Extend `BaseCommand` (or the package-specific command base class).
 	- Instantiated by the CLI runner/command dispatcher.
 
-- Core (`src/Core/`)
-	- Extend `BaseCore`.
+- Operations (`src/Operation/`)
+	- Extend `BaseOperation`.
 	- Instantiated explicitly by adapters using `new ...($this->app)`.
 
 - Repositories (`src/Repository/`)
@@ -413,52 +412,52 @@ The canonical adapter flow is.
 1. Read transport input.
 2. Normalize into a known array shape.
 3. Call Repository directly for trivial read or write.
-4. Call Core for non-trivial orchestration.
+4. Call Operation for non-trivial orchestration.
 5. Translate results to output.
 
-The contract is not “dumb adapters” as an insult. It is “pure adapters” as a boundary.
+The contract is not "dumb adapters" as an insult. It is "pure adapters" as a boundary.
 
-## Core
+## Operation
 ### Responsibility
-Core contains the primary program logic for a package or application.
+Operation contains the primary transport-agnostic orchestration logic for a package or application.
 
-- Domain rules.
-- Validations that are not purely transport-specific.
+- Application-level decision flow.
 - State transition logic.
+- Validations that are not purely transport-specific.
 - Orchestration across repositories and services.
 
-Core must not depend on any transport concepts.
+Operation must not depend on any transport concepts.
 
 - No HTTP request objects.
 - No response shaping.
 - No template rendering.
 - No CLI output formatting.
 
-Core must not execute SQL directly.
+Operation must not execute SQL directly.
 
-- No DB adapter in Core.
-- No query strings in Core.
+- No DB adapter in Operation.
+- No query strings in Operation.
 
-### Side Effects In Core
-Core is SQL-free, not side-effect-free.
+### Side Effects In Operation
+Operation is SQL-free, not side-effect-free.
 
-Core receives the App in order to access services and to avoid dependency injection ceremony that would contradict CitOmni’s performance and simplicity objectives.
+Operation receives the App in order to access services and to avoid dependency injection ceremony that would contradict CitOmni's performance and simplicity objectives.
 
 Therefore.
 
-- Core may call `$this->app->log`, `$this->app->txt`, `$this->app->mailer`, etc.
-- Core may call repositories, and repositories also receive `App` as part of CitOmni’s explicit wiring model.
+- Operation may call `$this->app->log`, `$this->app->txt`, `$this->app->mailer`, etc.
+- Operation may call repositories, and repositories also receive `App` as part of CitOmni's explicit wiring model.
 
 This is a deliberate design choice.
 
 - CitOmni prefers low overhead and predictable wiring over dependency injection ceremony.
 - The important boundary is responsibility, not artificial constructor purity.
 
-Core owns orchestration and domain decisions.
+Operation owns orchestration and application-level decision logic. 
 Repository owns persistence and SQL.
 
 ### Output Contract
-Core returns domain-shaped arrays.
+Operation returns domain-shaped arrays.
 
 - It does not return HTTP Response objects.
 - It does not return CLI exit codes.
@@ -466,31 +465,31 @@ Core returns domain-shaped arrays.
 
 Adapters translate domain-shaped arrays into transport-specific outputs.
 
-This rule prevents accidental coupling between domain logic and transport.
+This rule prevents accidental coupling between application logic and transport.
 
 ### Instantiation And Wiring
-Core is intentionally not a service-map category.
+Operation is intentionally not a service-map category.
 
-- Controllers and Commands instantiate Core explicitly and deterministically.
+- Controllers and Commands instantiate Operations explicitly and deterministically.
 - This avoids container complexity and keeps the call graph obvious in code reviews.
 
 Contract:
-- Every Core class extends `BaseCore`.
+- Every Operation class extends `BaseOperation`.
 - The constructor signature is: `__construct(App $app)`.
-- A Core instance is created in the adapter using `new`, passing the current App.
+- An Operation instance is created in the adapter using `new`, passing the current App.
 
 Typical usage:
-- In a Controller: `$core = new \Vendor\Package\Core\FinalizePayment($this->app);`
-- In a Command: `$core = new \Vendor\Package\Core\FinalizePayment($this->app);`
+- In a Controller: `$operation = new \Vendor\Package\Operation\FinalizePayment($this->app);`
+- In a Command: `$operation = new \Vendor\Package\Operation\FinalizePayment($this->app);`
 
 Notes:
-- Core must not be stored as a long-lived singleton across requests.
-- Core objects are cheap and may be instantiated per call-site.
+- Operation must not be stored as a long-lived singleton across requests.
+- Operation objects are cheap and may be instantiated per call-site.
 
-### When To Introduce A Core Class
-Core should not be created by default. A Core class exists only when there is a clear benefit relative to Controller to Repository calls.
+### When To Introduce An Operation Class
+Operation should not be created by default. An Operation class exists only when there is a clear benefit relative to Controller to Repository calls.
 
-Create a Core class when at least one of the following holds.
+Create an Operation class when at least one of the following holds.
 
 - The same logic must be used by both Controller and Command.
 - The same action must be callable from multiple routes or multiple commands.
@@ -498,22 +497,18 @@ Create a Core class when at least one of the following holds.
 - The operation includes multiple side effects, such as write plus log plus cache invalidation plus mail.
 - The operation requires orchestration across multiple repositories.
 
-If none of these holds, Controller to Repository is sufficient, and a Core class is likely overengineering.
+If none of these holds, Controller to Repository is sufficient, and an Operation class is likely overengineering.
 
 ### Recommended Naming
-To keep Core from degenerating into an unstructured “miscellaneous” container, names must carry semantic load.
+To keep Operation from degenerating into an unstructured "miscellaneous" container, names must carry semantic load.
 
 Good patterns.
 
-- Verb-centric orchestrators.
+- Verb-centric action classes.
+	- `AuthenticateUser`
 	- `FinalizePayment`
 	- `UpgradeSubscription`
 	- `PublishArticle`
-
-Rule-centric components.
-	- `SubscriptionRules`
-	- `PasswordPolicy`
-	- `VatCalculator`
 
 Avoid names that express no domain meaning.
 
@@ -523,7 +518,17 @@ Avoid names that express no domain meaning.
 - `Utils`
 - `Handler` as a generic bucket
 
-A Core class that cannot be named clearly is often a sign that the responsibility is not yet understood.
+Avoid suffix duplication inside `src/Operation/`.
+
+Prefer:
+- `AuthenticateUser`
+- `ResetPassword`
+
+Over:
+- `AuthenticateUserOperation`
+- `ResetPasswordOperation`
+
+A class name that cannot be stated clearly as a concrete action is often a sign that the responsibility is not yet understood.
 
 ## Repository
 ### Responsibility
@@ -549,7 +554,7 @@ By receiving `App`, repositories gain:
 
 - Shared access to the same DB connection without establishing it more than once per request/process.
 - Access to relevant configuration without secondary injection plumbing.
-- A constructor model aligned with the rest of CitOmni’s base-class structure.
+- A constructor model aligned with the rest of CitOmni's base-class structure.
 
 This does **not** make Repository a general-purpose service layer.
 
@@ -573,7 +578,7 @@ Not appropriate in Repository:
 - Mail dispatch.
 - User-facing text composition.
 - General orchestration.
-- Cross-cutting workflow logic better placed in Core or Service.
+- Cross-cutting workflow logic better placed in Operation or Service.
 
 ### BaseRepository
 Repositories extend `BaseRepository`, which standardizes DB access patterns while remaining minimal.
@@ -610,7 +615,7 @@ If a class.
 
 Then it must not be placed in `src/Service/`.
 
-This prevents a semantic split between “real services” and “service-like classes,” which is a reliable source of long-term confusion.
+This prevents a semantic split between "real services" and "service-like classes," which is a reliable source of long-term confusion.
 
 ### Service Map Registration
 CitOmni services are instantiated via explicit service maps. Registration is deterministic and does not rely on scanning.
@@ -628,7 +633,7 @@ Registration locations:
 	- Register in `<app-root>/config/services.php`.
 
 Contract:
-- A service is considered “real” only if it is both:
+- A service is considered "real" only if it is both:
 	1) Implemented as a `BaseService` subclass, and
 	2) Registered in the relevant service map for the active mode.
 
@@ -645,7 +650,7 @@ Utils are pure functions.
 - No network.
 - No SQL.
 
-They are the closest thing CitOmni has to “mathematical” code.
+They are the closest thing CitOmni has to "mathematical" code.
 
 This category is the simplest to test and the easiest to reason about. It should remain strict.
 
@@ -657,7 +662,7 @@ Exceptions encode failure semantics with explicit intent.
 
 CitOmni prefers fail-fast behavior.
 
-- Avoid catch-all exception handling in Core and Repository.
+- Avoid catch-all exception handling in Operation and Repository.
 - Catch only when there is a recoverable strategy with a documented fallback.
 
 A well-named exception is a control surface, not decoration.
@@ -674,8 +679,8 @@ Rationale.
 Recommendations.
 
 - Use associative arrays with documented keys.
-- Avoid “sometimes present” keys without clear rules.
-- Normalize types early, typically in adapters or in Core validation.
+- Avoid "sometimes present" keys without clear rules.
+- Normalize types early, typically in adapters or in Operation validation.
 - Keep repository return shapes consistent and minimal.
 
 For complex structures, prefer documented shapes rather than deep nested ad hoc structures.
@@ -686,7 +691,7 @@ A shape that cannot be described clearly is often a sign that the responsibility
 CitOmni wiring is explicit.
 
 - Providers are listed in `config/providers.php`.
-- Providers contribute service maps, config overlays, and routes in a deterministic “last wins” merge.
+- Providers contribute service maps, config overlays, and routes in a deterministic "last wins" merge.
 - Services are accessed via `$this->app->{id}` and instantiated from the service map.
 
 Service map sources depend on context:
@@ -721,7 +726,7 @@ A cache is a performance tool, not a correctness mechanism.
 ## Practical Examples
 
 ### Example One
-Trivial endpoint, no Core.
+Trivial endpoint, no Operation.
 
 - Controller parses input.
 - Controller calls Repository.
@@ -730,35 +735,35 @@ Trivial endpoint, no Core.
 This is valid and preferred when the logic is route-specific and does not justify an additional orchestration unit.
 
 ### Example Two
-Non-trivial action, Core introduced.
+Non-trivial action, Operation introduced.
 
 - Controller parses input.
-- Controller calls Core orchestrator.
-- Core applies rules, calls Repository, triggers infrastructure services.
-- Core returns domain-shaped array.
+- Controller calls Operation.
+- Operation applies rules, calls Repository, triggers infrastructure services.
+- Operation returns domain-shaped array.
 - Controller translates domain result to transport output.
 
-The cost of Core is justified by reuse, orchestration, or rule complexity.
+The cost of Operation is justified by reuse, orchestration, or rule complexity.
 
 ### Example Three
 Shared logic across HTTP and CLI.
 
-- Controller and Command both call the same Core orchestrator.
+- Controller and Command both call the same Operation.
 - Transport-specific parsing and output remain in adapters.
-- Core implements the domain decision graph once.
+- Operation implements the decision graph once.
 
-This is the canonical reason to introduce Core.
+This is the canonical reason to introduce Operation.
 
 ## Onboarding Notes
 New developers should internalize three invariants.
 
 1. SQL lives in Repository.
 2. Transport shaping lives in adapters.
-3. Core owns the “what happens” decision graph and returns domain shapes.
+3. Operation owns the "what happens" decision graph and returns domain shapes.
 
 Wiring overview:
 - Controllers/Commands are instantiated by the transport runtime (router/CLI runner).
-- Core is instantiated explicitly via `new ...($this->app)`.
+- Operations are instantiated explicitly via `new ...($this->app)`.
 - Repositories are instantiated explicitly and receive `App`.
 - Services are service-map singletons accessed as `$this->app->{serviceId}`.
 
@@ -773,6 +778,6 @@ CitOmni architecture is a constraint system.
 - Clear responsibility boundaries around persistence and transport.
 - Explicit wiring and deterministic merges.
 - Domain-shaped arrays as the lingua franca.
-- Core as the package kernel, introduced only when it earns its existence.
+- Operation as the transport-agnostic orchestration layer, introduced only when it earns its existence.
 
 This is not maximal purity. It is maximal predictability under performance constraints.
