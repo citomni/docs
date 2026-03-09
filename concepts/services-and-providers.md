@@ -14,8 +14,6 @@
 
 ---
 
----
-
 ## 1. Introduction
 
 **Providers** are the modular extension units of CitOmni. They contribute *capabilities* (services, routes, configuration overlays) to an application without incurring runtime "magic," reflection, or I/O during boot. Providers are declarative and composition-friendly: they expose **constant arrays** that the kernel reads and merges deterministically.
