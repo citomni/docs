@@ -492,7 +492,7 @@ Operation should not be created by default. An Operation class exists only when 
 Create an Operation class when at least one of the following holds.
 
 - The same logic must be used by both Controller and Command.
-- The same action must be callable from multiple routes or multiple commands.
+- The same operation must be callable from multiple routes or multiple commands.
 - The operation performs state change with meaningful rules and transitions.
 - The operation includes multiple side effects, such as write plus log plus cache invalidation plus mail.
 - The operation requires orchestration across multiple repositories.
