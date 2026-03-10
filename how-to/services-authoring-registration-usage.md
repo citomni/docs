@@ -67,7 +67,7 @@ new \Your\Namespace\Service\X(\CitOmni\Kernel\App $app, array $options = [])
 
 ## 3) Where Services come from (maps & precedence)
 
-CitOmni merges **service maps** deterministically using PHP’s `+` array operator semantics (key-preserving; **left operand wins on conflicts per merge step**).
+CitOmni merges **service maps** deterministically using PHP's `+` array operator semantics (key-preserving; **left operand wins on conflicts per merge step**).
 Config and routes use a deep associative merge where the later layer wins on conflicts.
 This ensures reproducible overrides without reflection or dynamic registration.
 
@@ -214,8 +214,7 @@ Anything in `/config/services.php` **wins over** provider maps, which themselves
 
 The following example mirrors patterns in core Services. Note that it **does not** import `App` (we don't do that in core Services) and uses your **CitOmni PHPDoc template** precisely.
 
-NOTE: The example below includes a try/catch when reading config. This is acceptable when the fallback is explicit and meaningful. For most services, the no-catch variant below is preferred. Prefer deterministic reads and let failures surface to the global error handler. A corrected no-catch variant is included right after the original example, without removing it.
-
+The example below follows the recommended no-catch pattern - config access failures bubble to the global error handler. A try/catch variant is included afterward for the rare cases where failure is genuinely recoverable and the fallback is explicit.
 ```php
 <?php
 declare(strict_types=1);
@@ -244,45 +243,18 @@ use CitOmni\Kernel\Service\BaseService;
  * @throws \InvalidArgumentException On invalid inputs (e.g., empty name).
  */
 final class Greeter extends BaseService {
-	/** @var string Immutable suffix computed at init() */
 	private string $suffix = '';
 
-	/**
-	 * Initialize the service once per request/process by merging options
-	 * (from the service map) with configuration (from $this->app->cfg).
-	 *
-	 * Behavior:
-	 * - options['suffix'] wins over identity.app_name (if any).
-	 * - Fails fast on invalid inputs (none are mandatory here).
-	 *
-	 * @return void
-	 */
 	protected function init(): void {
-		$cfgAppName = '';
-		try {
-			$identity = $this->app->cfg->identity ?? (object)[];
-			$cfgAppName = (string)($identity->app_name ?? '');
-		} catch (\Throwable) {
-			$cfgAppName = '';
-		}
+		$identity = $this->app->cfg->identity ?? (object)[];
+		$cfgAppName = (string)($identity->app_name ?? '');
 
-		$opt = $this->options; // copy
-		$this->options = [];   // free memory, avoid accidental reuse
-
-		$optSuffix = (string)($opt['suffix'] ?? '');
+		$optSuffix = (string)($this->options['suffix'] ?? '');
 		$this->suffix = ($optSuffix !== '')
 			? $optSuffix
 			: ($cfgAppName !== '' ? '- from ' . $cfgAppName : '');
 	}
 
-	/**
-	 * Build a greeting. Pure and allocation-lean.
-	 *
-	 * @param string $name Non-empty display name; trimmed; ASCII or UTF-8.
-	 * @return string Greeting string.
-	 *
-	 * @throws \InvalidArgumentException If $name is empty after trim.
-	 */
 	public function greet(string $name): string {
 		$name = \trim($name);
 		if ($name === '') {
@@ -293,8 +265,7 @@ final class Greeter extends BaseService {
 }
 ```
 
-**Greeter (No catch-all variant, recommended)**
-
+**Greeter (try/catch variant - only when failure is genuinely recoverable)**
 ```php
 <?php
 declare(strict_types=1);
@@ -307,19 +278,22 @@ use CitOmni\Kernel\Service\BaseService;
  * Greeter: Deterministic greeting builder with minimal overhead.
  *
  * Notes:
- * - No catch-all error handling. Config access failures bubble to the global handler.
+ * - Uses try/catch when reading config. Only justified when the fallback is
+ *   explicit and meaningful. For most services, the pattern above is preferred.
  */
-final class GreeterNoCatch extends BaseService {
+final class GreeterWithCatch extends BaseService {
 	private string $suffix = '';
 
 	protected function init(): void {
-		$identity = $this->app->cfg->identity ?? (object)[];
-		$cfgAppName = (string)($identity->app_name ?? '');
+		$cfgAppName = '';
+		try {
+			$identity = $this->app->cfg->identity ?? (object)[];
+			$cfgAppName = (string)($identity->app_name ?? '');
+		} catch (\Throwable) {
+			$cfgAppName = '';
+		}
 
-		$opt = $this->options;
-		$this->options = [];
-
-		$optSuffix = (string)($opt['suffix'] ?? '');
+		$optSuffix = (string)($this->options['suffix'] ?? '');
 		$this->suffix = ($optSuffix !== '')
 			? $optSuffix
 			: ($cfgAppName !== '' ? '- from ' . $cfgAppName : '');
@@ -339,7 +313,7 @@ final class GreeterNoCatch extends BaseService {
 
 ### Provider packages (reusable): `src/Boot/Registry.php`
 
-Provider packages should expose declarative maps via `src/Boot/Registry.php` using `Registry` as the class name. The kernel consumes the exported constants (IDs and shapes), not the file name “logic”.
+Provider packages should expose declarative maps via `src/Boot/Registry.php` using `Registry` as the class name. The kernel consumes the exported constants (IDs and shapes), not the file name "logic".
 
 ```php
 <?php
@@ -483,17 +457,29 @@ final class <ServiceName> extends BaseService {
 	 *
 	 * @return void
 	 */
-	protected function init(): void {
-		// 1) Optional: read config node
-		// $raw = $this->app->cfg-><cfgNode> ?? [];
-		// $cfg = ($raw instanceof \CitOmni\Kernel\Cfg) ? $raw->toArray() : (is_array($raw) ? $raw : []);
-
-		// 2) Consume options & clear them to free memory
-		// $opt = $this->options;
-		// $this->options = [];
-
+	protected function init(): void {	
+		// 1) Optional: Read config values.
+		//
+		//    For scalar lookups, read the cfg-key directly (no toArray() needed):
+		//    $this-><field> = (string)($this->app->cfg-><cfgNode>-><key> ?? '<default>');
+		//
+		//    When you need to merge the entire config node with $this->options via
+		//    Arr::mergeAssocLastWins(), you have to convert it first (mergeAssocLastWins() requires a
+		//    plain array - and cfg nodes are Cfg instances, not plain arrays).
+		//    To do the needed conversion, you can use:
+		//    $raw = $this->app->cfg-><cfgNode> ?? []; // [] only if the node is absent entirely
+		//    $cfg = ($raw instanceof \CitOmni\Kernel\Cfg) ? $raw->toArray() : (is_array($raw) ? $raw : []);
+		//
+		// 2) Optional: Read construction-time options.
+		//
+		//    $this->options holds the 'options' array from the service map definition, e.g.:
+		//    'myService' => ['class' => MyService::class, 'options' => ['key' => 'value']]
+		//    Options are for construction-time wiring only - prefer config for runtime policy.
+		//    See section "Configuration vs. Options" for guidance on when to use which.
+		//    $value = $this->options['<key>'] ?? '<default>';
+		//
 		// 3) Compute final, validated values
-		// $this-><fieldName> = <derived|validated|default>;
+		// $this-><fieldName> = <derived|validated|default>;		
 	}
 
 	/**
@@ -535,7 +521,7 @@ final class <ServiceName> extends BaseService {
 
 When designing regular Services (not bootstrapped by the Kernel):
 
-* **Init is cheap**: Pre-derive scalars in `init()`, drop `$this->options` afterward.
+* **Init is cheap**: Pre-derive scalars in `init()`, read options directly from `$this->options` as needed.
 * **Read config via `$this->app->cfg`**; do not keep the entire node if you only need 2 scalars.
 * **No global I/O** in hot paths; keep I/O at the edges, with narrow API and clear throws.
 * **Fail fast** using SPL exceptions; never swallow exceptions globally.
@@ -580,7 +566,7 @@ You will typically also have a separate route cache file, for example `var/cache
 * Do **not** install try/catch "umbrellas" in Services; fail fast and let the global ErrorHandler decide how to render/log.
 * If your Service performs OS/IO operations, validate **before** acting (paths exist? permissions? quotas?) to fail deterministically with clear messages.
 
-If you find yourself wanting to catch `\Throwable` inside a Service, treat it as a design smell first — prefer to restructure. However, try/catch is legitimate when failure is genuinely recoverable and the fallback is explicit and documented. Critical boot infrastructure (e.g. ErrorHandler) is a justified exception, as it cannot rely on itself to handle its own boot failure.
+If you find yourself wanting to catch `\Throwable` inside a Service, treat it as a design smell first - prefer to restructure. However, try/catch is legitimate when failure is genuinely recoverable and the fallback is explicit and documented. Critical boot infrastructure (e.g. ErrorHandler) is a justified exception, as it cannot rely on itself to handle its own boot failure.
 
 ---
 
