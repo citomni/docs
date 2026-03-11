@@ -4,11 +4,15 @@
 
 This document explains **how to build Services** for CitOmni: What they are, how they are **registered** and **resolved**, how they consume **configuration**, and how to keep them **deterministic** and **cheap**. It includes a production-ready **service skeleton** and authoritative guidance for **/config/services.php**.
 
-* PHP ≥ 8.2
-* PSR-1 / PSR-4
-* Tabs for indentation, **K&R** brace style
-* English PHPDoc and inline comments
-* Fail fast by default; use try/catch only when failure is genuinely recoverable and the fallback is explicit.
+---
+
+**Document type:** Technical Guide  
+**Version:** 1.0  
+**Applies to:** CitOmni >= 8.2  
+**Audience:** Application and provider developers  
+**Status:** Stable and foundational  
+**Author:** CitOmni Core Team  
+**Copyright:** Copyright (c) 2012-present CitOmni
 
 ---
 
