@@ -2,9 +2,9 @@
 
 > **Low overhead. High performance. Predictable by design.**
 
-This document explains **how to build Repositories** for CitOmni: What they are, where they belong in the architecture, how they use the `Db` service, what they may and may not do, and how to keep them **deterministic**, **cheap**, and **reviewable**.
+This document explains **how to build Repositories** for CitOmni: What they are, where they belong in the architecture, how they use the `Db` service and the repository-facing `ValueToSql` / `ValueFromSql` services, what they may and may not do, and how to keep them **deterministic**, **cheap**, and **reviewable**.
 
-It also documents the practical Repository-facing usage of the built-in **Db** service, so the document can be used as a complete authoring guide for normal Repository work.
+It also documents the practical Repository-facing usage of the built-in **Db**, **ValueToSql**, and **ValueFromSql** services, so the document can be used as a complete authoring guide for normal Repository work.
 
 It includes a production-ready **repository skeleton** and practical guidance for writing SQL-centric persistence code that fits CitOmni's architectural contract.
 
@@ -258,6 +258,8 @@ Repository access to `App` is constrained by responsibility:
 
 Allowed:
 - `$this->app->db`
+- `$this->app->valueToSql`
+- `$this->app->valueFromSql`
 - persistence-related config reads
 - small storage-adjacent helpers directly tied to persistence behavior
 
@@ -503,6 +505,148 @@ Repositories should usually let these bubble rather than wrapping them in vague 
 * Use `insert()`, `update()`, and `delete()` for straightforward table operations
 * Use `transaction()` only when the transaction boundary is still persistence-local
 * Let DB exceptions bubble by default
+
+---
+
+### The ValueToSql and ValueFromSql service APIs in Repositories
+
+In CitOmni, `ValueToSql` and `ValueFromSql` are valid Repository-facing services.
+
+They belong naturally in Repository work because they solve a persistence-adjacent boundary problem:
+
+- `ValueToSql` normalizes incoming values into strict SQL-friendly values for parameter binding.
+- `ValueFromSql` formats raw SQL values into stable UI/form-friendly values when Repository methods intentionally prepare data for edit forms or similar persistence-backed input flows.
+
+Use them through:
+
+```php
+$this->app->valueToSql
+$this->app->valueFromSql
+````
+
+and not by duplicating ad hoc parsing/formatting logic inside each Repository.
+
+### Core rule
+
+Use these services for **value normalization at the persistence boundary**.
+
+Use `ValueToSql` when a Repository method accepts user-/form-shaped input and needs to normalize it into strict SQL values before executing queries.
+
+Use `ValueFromSql` when a Repository method returns database values that are intentionally shaped for form repopulation, edit screens, or other UI-facing persistence output.
+
+Do **not** use them as a substitute for broader business validation or workflow decisions.
+
+### What ValueToSql is for
+
+`ValueToSql` converts common UI/form inputs into SQL-safe scalar values with strict fail-fast behavior.
+
+Typical Repository use cases:
+
+* normalize localized integers before binding,
+* normalize localized decimals into SQL dot-decimal strings,
+* normalize checkbox/toggle values into SQL booleans (`0`/`1`),
+* normalize dates and times into SQL-friendly strings,
+* normalize nullable text fields consistently,
+* validate enum-like input against an allowed value list,
+* encode JSON payloads deterministically before storage.
+
+Typical methods:
+
+* `integer(mixed $value, bool $required = false, int $min = \PHP_INT_MIN, int $max = \PHP_INT_MAX, bool $allowNegative = true): ?int`
+* `decimal(mixed $value, bool $required = false, int $scale = 2, bool $allowNegative = true): ?string`
+* `boolean(mixed $value, bool $required = false): ?int`
+* `date(mixed $value, bool $required = false): ?string`
+* `time(mixed $value, bool $required = false): ?string`
+* `dateTime(mixed $value, bool $required = false): ?string`
+* `text(mixed $value, bool $required = false, int $maxLen = 0, bool $trim = true): ?string`
+* `enum(mixed $value, array $allowed, bool $required = false): ?string`
+* `json(mixed $value, bool $required = false): ?string`
+
+Example:
+
+```php
+$price = $this->app->valueToSql->decimal($input['price'] ?? null, required: true, scale: 2);
+$yearBuilt = $this->app->valueToSql->integer($input['year_built'] ?? null, min: 1800, max: 2100);
+$isActive = $this->app->valueToSql->boolean($input['is_active'] ?? null);
+
+$this->app->db->execute(
+	'UPDATE property SET price = ?, year_built = ?, is_active = ? WHERE id = ?',
+	[$price, $yearBuilt, $isActive, $propertyId]
+);
+```
+
+### What ValueFromSql is for
+
+`ValueFromSql` converts raw SQL result values into locale-aware strings or simple PHP values suitable for form fields and edit flows.
+
+Typical Repository use cases:
+
+* convert SQL integers into display/form strings,
+* convert SQL decimals into locale-formatted strings,
+* convert SQL boolean-style values into PHP booleans,
+* convert SQL date/time values into HTML form field values,
+* decode JSON columns into arrays for editing,
+* normalize nullable text values before returning edit data.
+
+Typical methods:
+
+* `integer(mixed $value, bool $required = false, ?bool $groupThousands = null): ?string`
+* `decimal(mixed $value, bool $required = false, ?int $scale = null, ?bool $groupThousands = null, ?bool $trimTrailingZeros = null, ?string $rounding = null): ?string`
+* `boolean(mixed $value, bool $required = false): ?bool`
+* `date(mixed $value, bool $required = false, string $format = 'YYYY-MM-DD'): ?string`
+* `time(mixed $value, bool $required = false, ?bool $includeSeconds = null): ?string`
+* `dateTimeLocal(mixed $value, bool $required = false, ?bool $includeSeconds = null): ?string`
+* `text(mixed $value, bool $required = false): ?string`
+* `json(mixed $value, bool $required = false): ?array`
+
+Example:
+
+```php
+$row = $this->app->db->fetchRow(
+	'SELECT price, year_built, is_active, available_from FROM property WHERE id = ? LIMIT 1',
+	[$propertyId]
+);
+
+if ($row === null) {
+	return null;
+}
+
+return [
+	'price' => $this->app->valueFromSql->decimal($row['price'] ?? null),
+	'year_built' => $this->app->valueFromSql->integer($row['year_built'] ?? null, groupThousands: false),
+	'is_active' => $this->app->valueFromSql->boolean($row['is_active'] ?? null),
+	'available_from' => $this->app->valueFromSql->date($row['available_from'] ?? null),
+];
+```
+
+### Repository boundary guidance for Value*Sql
+
+Use `ValueToSql` and `ValueFromSql` when they make the Repository's persistence contract more explicit and deterministic.
+
+Good fit:
+
+* methods that persist form-backed values,
+* methods that load row data for edit forms,
+* methods that must enforce strict locale-aware numeric normalization close to SQL,
+* methods that must decode/encode JSON columns consistently.
+
+Less suitable:
+
+* broad domain validation,
+* cross-field business rules,
+* workflow branching,
+* user-facing translation/messages.
+
+Those concerns belong elsewhere.
+
+### Recommended Value*Sql usage rules in Repositories
+
+* Prefer `ValueToSql` over hand-written locale parsing in Repository methods
+* Prefer `ValueFromSql` over ad hoc result formatting for edit flows
+* Let `ValueToSqlException`, `ValueFromSqlException`, and configuration exceptions fail fast by default
+* Keep normalization narrow and method-local
+* Do not turn Repository methods into general form-processing classes
+* Do not mix value normalization with broader business workflows
 
 ---
 
