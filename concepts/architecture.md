@@ -104,8 +104,8 @@ The canonical directory structure for application and provider package code is.
 	- Every class here extends `BaseService` and is registered in the service map.
 	- Accessed as `$this->app->{serviceId}`.
 	- Registration location depends on context:
-		- Mode packages (`citomni/http`, `citomni/cli`): `<package-root>/src/Boot/Services.php::MAP`
-		- Provider packages: `<package-root>/src/Boot/Registry.php::MAP_HTTP` (and optionally `MAP_CLI`)
+		- Mode packages (`citomni/http`, `citomni/cli`): `<package-root>/src/Boot/Registry.php::MAP_HTTP` / `MAP_CLI`
+		- Provider packages: `<package-root>/src/Boot/Registry.php::MAP_HTTP` / `MAP_CLI`
 		- Application-local services: `<app-root>/config/services.php`
 
 - `src/Util/`
@@ -174,7 +174,15 @@ The legacy "Model layer" is split into two explicit concerns.
 		/citomni_http_routes.stage.php		// HTTP stage routes overlay (last-wins merge)
 		/citomni_http_routes.prod.php		// HTTP prod routes overlay (last-wins merge)
 
-		/citomni_cli_cfg.php				// CLI config baseline/overlay (depending on how you structure CLI needs)
+		/citomni_cli_cfg.php				// CLI base config
+		/citomni_cli_cfg.dev.php			// CLI dev overlay (last-wins merge)
+		/citomni_cli_cfg.stage.php			// CLI stage overlay (last-wins merge)
+		/citomni_cli_cfg.prod.php			// CLI prod overlay (last-wins merge)
+
+		/citomni_cli_routes.php				// CLI base routes (non-env specific baseline)
+		/citomni_cli_routes.dev.php			// CLI dev routes overlay (last-wins merge)
+		/citomni_cli_routes.stage.php		// CLI stage routes overlay (last-wins merge)
+		/citomni_cli_routes.prod.php		// CLI prod routes overlay (last-wins merge)
 
 		/README.md							// Config notes: precedence, patterns, and pitfalls (human documentation)
 		/.htaccess							// Defense-in-depth: deny web access if misconfigured hosting exposes /config
@@ -263,15 +271,9 @@ The legacy "Model layer" is split into two explicit concerns.
 		/install.sql								// Installation SQL (if the package needs DB tables)
 
 	/src										// Package code (PSR-4 root)
-		/Boot									// Boot metadata for mode packages (NOT Registry-based)
-			/Config.php							// Base config constant (typically CFG) for this mode package
-												// Read by App::buildConfig() through the mode package integration.
-
-			/Routes.php							// Routes constant(s) for this mode package (HTTP/CLI-specific)
-												// Read by App::buildRoutes() through the mode package integration.
-
-			/Services.php						// Service-map constant (typically MAP) for this mode package
-												// Read by App::buildServices() through the mode package integration.
+		/Boot									// Boot metadata for mode packages
+			/Registry.php						// Mode registry (MAP_HTTP/MAP_CLI/CFG_HTTP/CFG_CLI/ROUTES_HTTP/ROUTES_CLI)
+												// Read directly by App::buildConfig(), App::buildRoutes(), and App::buildServices().
 
 		/Kernel.php								// Central runtime kernel for the mode (boot + run loop)
 												// HTTP: Handles request lifecycle, routing, controller dispatch, error handling, response emit
@@ -695,7 +697,7 @@ CitOmni wiring is explicit.
 - Services are accessed via `$this->app->{id}` and instantiated from the service map.
 
 Service map sources depend on context:
-- Mode packages (`citomni/http`, `citomni/cli`): `<package-root>/src/Boot/Services.php::MAP`
+- Mode packages (`citomni/http`, `citomni/cli`): `<package-root>/src/Boot/Registry.php::MAP_HTTP` / `MAP_CLI`
 - Provider packages: `<package-root>/src/Boot/Registry.php::MAP_HTTP` / `MAP_CLI`
 - Application-local services: `<app-root>/config/services.php`
 
@@ -706,6 +708,22 @@ Determinism is a requirement, not a preference.
 - No magical conventions that change meaning when a file is moved.
 
 Predictability is cheaper than debugging.
+
+## App Helper Methods
+
+The `App` exposes a few low-overhead helper methods for capability checks.
+
+- `$app->hasService('id')`
+	- Returns true if the service id exists in the resolved service map.
+
+- `$app->hasAnyService('a', 'b')`
+	- Returns true if any of the given service ids exist.
+
+- `$app->hasPackage('vendor/package')`
+	- Returns true if the resolved service map or route map references classes from that package.
+
+- `$app->hasNamespace('\Vendor\Package\')`
+	- Returns true if the resolved service map or route map references classes under that namespace prefix.
 
 ## Caching Strategy
 CitOmni uses explicit caches when they yield measurable benefits.
