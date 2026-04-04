@@ -4,11 +4,11 @@
 ---
 
 **Document type:** Research Analysis  
-**Version:** 0.1
-**Context:** CitOmni architectural research
+**Version:** 1.0  
+**Context:** CitOmni architectural research  
 **Audience:** Framework developers, maintainers, architecture reviewers, and advanced application designers  
 **Status:** Exploratory and non-normative  
-**Author:** Lars Grove Mortensen, CitOmni Core Team 
+**Author:** Lars Grove Mortensen, CitOmni Core Team  
 **Copyright:** © 2012-present CitOmni
 
 ---

@@ -18,7 +18,7 @@ They are not automatically normative, canonical, or final framework documentatio
 
 ## Index
 
-- [Against the EAV default A case for relational core design with controlled semi structured extension](./Against-the-EAV-default_ A-case-for-relational-core-design-with-controlled-semi-structured-extension.md)
+- [Against the eav default a case for relational core design with controlled semi structured extension](./against-the-eav-default-a-case-for-relational-core-design-with-controlled-semi-structured-extension.md)
 - [Transport agnostic action layering 2026 03 09](./transport-agnostic-action-layering-2026-03-09.md)
 
 <!-- AUTO-INDEX:END -->

@@ -73,7 +73,7 @@ This repository hosts the public documentation for the CitOmni Framework.
 
 ### research
 - [research/README.md](./research/README.md)
-- [research/Against-the-EAV-default_ A-case-for-relational-core-design-with-controlled-semi-structured-extension.md](./research/Against-the-EAV-default_ A-case-for-relational-core-design-with-controlled-semi-structured-extension.md)
+- [research/against-the-eav-default-a-case-for-relational-core-design-with-controlled-semi-structured-extension.md](./research/against-the-eav-default-a-case-for-relational-core-design-with-controlled-semi-structured-extension.md)
 - [research/transport-agnostic-action-layering-2026-03-09.md](./research/transport-agnostic-action-layering-2026-03-09.md)
 
 ### troubleshooting
@@ -151,4 +151,4 @@ Below is the planned layout. Some sections may be empty while we migrate content
 
 ---
 _This README was generated automatically._  
-_Last updated: 2026-04-04 23:06:55_
+_Last updated: 2026-04-04 23:44:56_
