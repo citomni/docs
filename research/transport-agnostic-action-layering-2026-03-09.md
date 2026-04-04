@@ -4,12 +4,12 @@
 ---
 
 **Document type:** Research Analysis  
-**Version:** 0.1
-**Context:** CitOmni architectural research
+**Version:** 0.1  
+**Context:** CitOmni architectural research  
 **Audience:** Framework developers, maintainers, and architecture reviewers  
 **Status:** Exploratory and non-normative  
 **Author:** CitOmni Core Team  
-**Copyright:** © 2012-present CitOmni
+**Copyright:** © 2012-present CitOmni  
 
 ---
 
