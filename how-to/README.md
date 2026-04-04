@@ -26,6 +26,7 @@ They are practical implementation guides focused on concrete outcomes such as bu
 - [Log service usage](./log-service-usage.md)
 - [Migrate from litemysqli to db service](./migrate-from-litemysqli-to-db-service.md)
 - [Providers build a provider](./providers-build-a-provider.md)
+- [Repositories authoring and usage](./repositories-authoring-and-usage.md)
 - [Security service csrf how to](./security-service-csrf-how-to.md)
 - [Services authoring registration usage](./services-authoring-registration-usage.md)
 - [UploadRename usage guide](./uploadRename_usage-guide.md)

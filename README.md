@@ -38,6 +38,7 @@ This repository hosts the public documentation for the CitOmni Framework.
 - [how-to/log-service-usage.md](./how-to/log-service-usage.md)
 - [how-to/migrate-from-litemysqli-to-db-service.md](./how-to/migrate-from-litemysqli-to-db-service.md)
 - [how-to/providers-build-a-provider.md](./how-to/providers-build-a-provider.md)
+- [how-to/repositories-authoring-and-usage.md](./how-to/repositories-authoring-and-usage.md)
 - [how-to/security-service-csrf-how-to.md](./how-to/security-service-csrf-how-to.md)
 - [how-to/services-authoring-registration-usage.md](./how-to/services-authoring-registration-usage.md)
 - [how-to/uploadRename_usage-guide.md](./how-to/uploadRename_usage-guide.md)
@@ -59,6 +60,8 @@ This repository hosts the public documentation for the CitOmni Framework.
 - [reference/README.md](./reference/README.md)
 - [reference/flash-service.md](./reference/flash-service.md)
 - [reference/log-service.md](./reference/log-service.md)
+- [reference/router-reference-light.md](./reference/router-reference-light.md)
+- [reference/session-service.md](./reference/session-service.md)
 - [reference/txt-service.md](./reference/txt-service.md)
 
 ### release-notes
@@ -70,6 +73,7 @@ This repository hosts the public documentation for the CitOmni Framework.
 
 ### research
 - [research/README.md](./research/README.md)
+- [research/Against-the-EAV-default_ A-case-for-relational-core-design-with-controlled-semi-structured-extension.md](./research/Against-the-EAV-default_ A-case-for-relational-core-design-with-controlled-semi-structured-extension.md)
 - [research/transport-agnostic-action-layering-2026-03-09.md](./research/transport-agnostic-action-layering-2026-03-09.md)
 
 ### troubleshooting
@@ -147,4 +151,4 @@ Below is the planned layout. Some sections may be empty while we migrate content
 
 ---
 _This README was generated automatically._  
-_Last updated: 2026-03-11 02:30:21_
+_Last updated: 2026-04-04 23:06:55_

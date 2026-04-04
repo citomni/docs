@@ -20,6 +20,8 @@ They are intended to be authoritative technical documentation for developers who
 
 - [Flash service](./flash-service.md)
 - [Log service](./log-service.md)
+- [Router reference light](./router-reference-light.md)
+- [Session service](./session-service.md)
 - [Txt service](./txt-service.md)
 
 <!-- AUTO-INDEX:END -->
