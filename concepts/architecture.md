@@ -108,6 +108,22 @@ The canonical directory structure for application and provider package code is.
 		- Provider packages: `<package-root>/src/Boot/Registry.php::MAP_HTTP` / `MAP_CLI`
 		- Application-local services: `<app-root>/config/services.php`
 
+- `src/Policy/`
+	- App-aware policy classes.
+	- Encodes rules, requirements, and policy-driven decisions.
+
+- `src/State/`
+	- App-aware runtime state handlers.
+	- Owns explicit state contracts, storage keys, TTL handling, and state transitions where applicable.
+
+- `src/Support/`
+	- App-aware support classes that do not belong in the service map.
+	- Used for focused supporting roles that need `App`, but are not pure helpers and are not reusable singleton services.
+
+- `src/Enum/`
+	- Type-safe representation of stable internal value sets.
+	- Useful for statuses, purposes, modes, and similar bounded values.
+
 - `src/Util/`
 	- Pure helpers.
 	- Input to output, no App, no config, no logging, no caching, no IO.
@@ -155,6 +171,18 @@ The legacy "Model layer" is split into two explicit concerns.
 
 		/Operation							// Transport-agnostic orchestration layer
 											// Explicitly instantiated units coordinating business actions and state transitions.
+
+		/Policy								// App-aware policy classes
+											// Encodes rules, requirements, and policy-driven decisions.
+
+		/State								// App-aware runtime state handlers
+											// Owns explicit state contracts, keys, TTLs, and transitions where relevant.
+
+		/Support							// App-aware support classes
+											// Focused supporting roles that need App without being service-map services.
+
+		/Enum								// Type-safe bounded values
+											// Internal enums for statuses, purposes, modes, and similar fixed sets.
 
 		/Exception							// Transport-agnostic app/domain exceptions
 											// Shared across HTTP & CLI; thrown by Service/Repository/Operation as appropriate.
@@ -286,7 +314,11 @@ The legacy "Model layer" is split into two explicit concerns.
 												// Keep deterministic, SQL-free, and low-overhead.
 
 		/Repository								// Persistence layer (optional; only if the mode package touches DB)
-		/Service									// Services used by the mode package internally (routing, templating, csrf, etc.)
+		/Service								// Services used by the mode package internally (routing, templating, csrf, etc.)
+		/Policy									// App-aware policy classes used by the mode package where needed
+		/State									// Runtime state handlers for explicit mode-specific state contracts
+		/Support								// Focused App-aware support classes that are not service-map services
+		/Enum									// Type-safe bounded values used internally by the mode package
 		/Util									// Small stateless helpers (pure functions / tiny utilities)
 		/Exception								// Package exceptions (typically transport-aware for the mode)
 
@@ -315,12 +347,12 @@ The legacy "Model layer" is split into two explicit concerns.
 		/en										// English strings (often the source language)
 
 	/sql										// SQL artifacts shipped by the package (optional)
-		/install.sql								// Installation SQL (tables/indexes/seed, if the package needs it)
+		/install.sql							// Installation SQL (tables/indexes/seed, if the package needs it)
 		// (Optional: /migrations, /uninstall.sql, /seed.sql, etc. if you standardize it later)
 
 	/src										// Package code (PSR-4 root)
 		/Boot									// Boot metadata for CitOmni provider loading
-			/Registry.php							// Provider registry (MAP_HTTP/MAP_CLI/CFG_HTTP/CFG_CLI/ROUTES_HTTP/ROUTES_CLI)
+			/Registry.php						// Provider registry (MAP_HTTP/MAP_CLI/CFG_HTTP/CFG_CLI/ROUTES_HTTP/ROUTES_CLI)
 
 		/Controller								// Optional: HTTP controllers shipped by the package
 												// Only used if the package provides routes/controllers directly.
@@ -333,8 +365,20 @@ The legacy "Model layer" is split into two explicit concerns.
 		/Repository								// Persistence layer (DB access, queries, mappers)
 												// Everything that knows SQL/schema/resultsets; no HTTP/CLI concerns.
 
-		/Service									// Reusable App-aware services registered in the service map
+		/Service								// Reusable App-aware services registered in the service map
 												// Infrastructure and cross-cutting capabilities.
+
+		/Policy									// App-aware policy classes
+												// Encodes package rules, requirements, and policy-driven decisions.
+
+		/State									// App-aware runtime state handlers
+												// Owns explicit package state contracts, keys, TTLs, and transitions where relevant.
+
+		/Support								// Focused App-aware support classes
+												// Supporting roles that need App without being registered services.
+
+		/Enum									// Type-safe bounded values
+												// Internal enums for statuses, purposes, modes, and similar fixed sets.
 
 		/Util									// Small stateless helpers (pure functions / tiny utilities)
 												// Keep focused. If it grows state/IO, consider Operation or Service.
