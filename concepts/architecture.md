@@ -207,10 +207,10 @@ The legacy "Model layer" is split into two explicit concerns.
 		/citomni_cli_cfg.stage.php			// CLI stage overlay (last-wins merge)
 		/citomni_cli_cfg.prod.php			// CLI prod overlay (last-wins merge)
 
-		/citomni_cli_routes.php				// CLI base routes (non-env specific baseline)
-		/citomni_cli_routes.dev.php			// CLI dev routes overlay (last-wins merge)
-		/citomni_cli_routes.stage.php		// CLI stage routes overlay (last-wins merge)
-		/citomni_cli_routes.prod.php		// CLI prod routes overlay (last-wins merge)
+		/citomni_cli_commands.php			// CLI base commands (non-env specific baseline)
+		/citomni_cli_commands.dev.php		// CLI dev commands overlay (last-wins merge)
+		/citomni_cli_commands.stage.php		// CLI stage commands overlay (last-wins merge)
+		/citomni_cli_commands.prod.php		// CLI prod commands overlay (last-wins merge)
 
 		/README.md							// Config notes: precedence, patterns, and pitfalls (human documentation)
 		/.htaccess							// Defense-in-depth: deny web access if misconfigured hosting exposes /config
@@ -300,8 +300,8 @@ The legacy "Model layer" is split into two explicit concerns.
 
 	/src										// Package code (PSR-4 root)
 		/Boot									// Boot metadata for mode packages
-			/Registry.php						// Mode registry (MAP_HTTP/MAP_CLI/CFG_HTTP/CFG_CLI/ROUTES_HTTP/ROUTES_CLI)
-												// Read directly by App::buildConfig(), App::buildRoutes(), and App::buildServices().
+			/Registry.php						// Mode registry (MAP_HTTP/MAP_CLI/CFG_HTTP/CFG_CLI/ROUTES_HTTP/COMMANDS_CLI)
+												// Read directly by App::buildConfig(), App::buildRoutes(), App::buildCommands(), and App::buildServices().
 
 		/Kernel.php								// Central runtime kernel for the mode (boot + run loop)
 												// HTTP: Handles request lifecycle, routing, controller dispatch, error handling, response emit
@@ -352,7 +352,7 @@ The legacy "Model layer" is split into two explicit concerns.
 
 	/src										// Package code (PSR-4 root)
 		/Boot									// Boot metadata for CitOmni provider loading
-			/Registry.php						// Provider registry (MAP_HTTP/MAP_CLI/CFG_HTTP/CFG_CLI/ROUTES_HTTP/ROUTES_CLI)
+			/Registry.php						// Provider registry (MAP_HTTP/MAP_CLI/CFG_HTTP/CFG_CLI/ROUTES_HTTP/COMMANDS_CLI)
 
 		/Controller								// Optional: HTTP controllers shipped by the package
 												// Only used if the package provides routes/controllers directly.
@@ -737,7 +737,7 @@ A shape that cannot be described clearly is often a sign that the responsibility
 CitOmni wiring is explicit.
 
 - Providers are listed in `config/providers.php`.
-- Providers contribute service maps, config overlays, and routes in a deterministic "last wins" merge.
+- Providers contribute service maps, config overlays, and dispatch maps (HTTP routes and CLI commands) in a deterministic "last wins" merge.
 - Services are accessed via `$this->app->{id}` and instantiated from the service map.
 
 Service map sources depend on context:
@@ -764,16 +764,39 @@ The `App` exposes a few low-overhead helper methods for capability checks.
 	- Returns true if any of the given service ids exist.
 
 - `$app->hasPackage('vendor/package')`
-	- Returns true if the resolved service map or route map references classes from that package.
+	- Returns true if the resolved service map or dispatch maps reference classes from that package.
 
 - `$app->hasNamespace('\Vendor\Package\')`
-	- Returns true if the resolved service map or route map references classes under that namespace prefix.
+	- Returns true if the resolved service map or dispatch maps reference classes under that namespace prefix.
+
+## HTTP Boot Sequence
+
+The canonical HTTP boot sequence is.
+
+1. `public/index.php` defines runtime constants and loads Composer autoload.
+2. `\CitOmni\Http\Kernel::run(__DIR__)` starts the HTTP runtime.
+3. `Kernel::run()` starts output buffering and calls `Kernel::boot()`.
+4. `Kernel::boot()` resolves app root, config directory, and public path from the entry path.
+5. `new App($configDir, Mode::HTTP)` loads cfg, routes, and services from cache or builds them live.
+6. `errorHandler->install()` registers global error handling.
+7. `Runtime::configure($app->cfg)` applies process-global runtime settings.
+8. The HTTP kernel asserts PHP intl / Locale availability.
+9. The HTTP kernel defines `CITOMNI_PUBLIC_ROOT_URL` when it is not already defined.
+10. Trusted proxies are applied to the request service when configured.
+11. `maintenance->guard()` runs.
+12. `router->run()` dispatches the request to the matched controller action.
+
+Notes:
+- `App::__construct()` builds application state, but does not apply process-global runtime settings.
+- Public root URL resolution is HTTP-kernel-owned.
+- Maintenance guard and router dispatch happen after boot is complete.
 
 ## Caching Strategy
 CitOmni uses explicit caches when they yield measurable benefits.
 
 - Configuration cache.
-- Route cache.
+- Route cache for HTTP mode.
+- Command cache for CLI mode.
 - Service map cache.
 
 Caches are precompiled into PHP files and can be warmed atomically.
