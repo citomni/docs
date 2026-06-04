@@ -147,6 +147,8 @@ The legacy "Model layer" is split into two explicit concerns.
 
 ### Complete Layout: Application Layer
 
+NOTE: This is the complete application layout after the relevant mode packages have been installed and their scaffold has been materialized. The neutral `citomni/app-skeleton` does not contain HTTP- or CLI-specific folders such as `public/`, `templates/`, `src/Http/`, `src/Cli/`, or mode-specific config files. Those are provided by `citomni/http` and `citomni/cli`.
+
 /app-root									// Project root
 	/src									// Application code (PSR-4: App\ -> src/)
 		/Http								// HTTP delivery layer (web-only concerns)
@@ -191,6 +193,8 @@ The legacy "Model layer" is split into two explicit concerns.
 	/config									// Base config + env overlays + wiring points (providers/services/routes)
 		/providers.php						// List of provider registries (Boot\Registry::class) loaded by the app
 		/services.php						// App-local services registered in the service-map (HTTP/CLI as applicable)
+		
+		/citomni_installer.php				// App-owned installer placeholders and scaffold materialization settings
 
 		/citomni_http_cfg.php				// HTTP base config (non-env specific baseline)
 		/citomni_http_cfg.dev.php			// HTTP dev overlay (last-wins merge)
@@ -249,7 +253,7 @@ The legacy "Model layer" is split into two explicit concerns.
 
 	/var									// Runtime writeable path (prod: only this is writeable)
 		/backups							// App-level backup artifacts (db dumps, exported payloads, etc.)
-			/flags							// Backed-up flag state (optional; depends on app needs)
+		/flags								// Backed-up flag state (optional; depends on app needs)
 		/cache								// Safe-to-purge caches (compiled config/routes/services, templates, etc.)
 		/flags								// Maintenance/feature flags (file-based toggles, e.g. maintenance.php)
 		/logs								// Application logs (rotate externally or in-app; keep machine-readable when possible)
@@ -264,12 +268,14 @@ The legacy "Model layer" is split into two explicit concerns.
 
 
 	/vendor									// Composer-managed dependencies (do not edit)
-		/citomni								// CitOmni packages installed via Composer
+		/citomni							// CitOmni packages installed via Composer
+			/installer						// CitOmni scaffold materializer and lifecycle CLI
 			/http							// CitOmni HTTP (delivery+infra for web)
 			/cli							// CitOmni CLI (delivery+infra for terminal)
 
 
 	composer.json							// Dependencies & autoload (PSR-4: App\ -> src/)
+	.gitattributes							// Git normalization rules for line endings, text files, and binary files
 	.gitignore								// VCS ignore rules (cache, secrets, local artifacts, etc.)
 	LICENSE									// Project license
 	NOTICE									// Third-party notices (if applicable)
