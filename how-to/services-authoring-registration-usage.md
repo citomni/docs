@@ -13,7 +13,7 @@ It covers both reusable provider packages and app-local service overrides throug
 **Applies to:** CitOmni PHP 8.2+  
 **Audience:** Application and provider developers  
 **Status:** Stable and foundational  
-**Author:** CitOmni Core Team  
+**Author:** CitOmni Core Team
 **Copyright:** Copyright (c) 2012-present CitOmni
 
 ---

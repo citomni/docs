@@ -38,7 +38,7 @@ CitOmni explicitly does not aim to provide.
 If a project requires these characteristics, it may still be built on CitOmni, but CitOmni will not enforce them nor pay their runtime costs by default.
 
 ## Conceptual Model
-CitOmni structures the codebase into six primary categories, each with a strict contract.
+CitOmni structures the codebase into seven primary categories, each with a strict contract.
 
 - Adapters
 	- Transport-specific entry points for HTTP and CLI.
@@ -48,6 +48,10 @@ CitOmni structures the codebase into six primary categories, each with a strict 
 	- Transport-agnostic orchestration and application-level decision logic.
 	- Operations are SQL-free and do not shape transport output.
 	- Operations may call services and repositories via the App, hence Operations are not academically side-effect-free.
+
+- Contract
+	- Stable public extension interfaces that consumer apps or packages may implement or type against.
+	- Contracts define deliberate package boundaries and must remain small, implementation-free, and documented.
 
 - Repository
 	- Persistence boundary, owning all SQL and datastore IO.
@@ -70,6 +74,7 @@ A practical reading is.
 
 - Adapters speak protocols.
 - Operations decide what happens.
+- Contracts define extension seams.
 - Repositories talk to storage.
 - Services provide tools.
 - Utils compute.
@@ -92,6 +97,12 @@ The canonical directory structure for application and provider package code is.
 	- SQL-free and transport-agnostic.
 	- Returns domain-shaped arrays rather than Response objects.
 	- Operation classes extend `BaseOperation` and are instantiated explicitly by adapters (Controllers/Commands) using `new ...($this->app)`.
+
+- `src/Contract/`
+	- Stable public extension interfaces.
+	- Used only for deliberate contracts that consumer apps or packages may implement or type against.
+	- Interfaces here are part of the package or app public API and should remain small, stable, and implementation-free.
+	- Do not place internal convenience interfaces here.
 
 - `src/Repository/`
 	- Persistence boundary.
@@ -173,6 +184,9 @@ NOTE: This is the complete application layout after the relevant mode packages h
 
 		/Operation							// Transport-agnostic orchestration layer
 											// Explicitly instantiated units coordinating business actions and state transitions.
+
+		/Contract							// Stable public extension interfaces
+											// Deliberate contracts external code may implement or type against.
 
 		/Policy								// App-aware policy classes
 											// Encodes rules, requirements, and policy-driven decisions.
@@ -319,6 +333,9 @@ NOTE: This is the complete application layout after the relevant mode packages h
 		/Operation								// Internal transport-agnostic orchestration units
 												// Keep deterministic, SQL-free, and low-overhead.
 
+		/Contract								// Stable public extension interfaces exposed by the mode package
+												// Use only for deliberate contracts external code may implement or type against.
+
 		/Repository								// Persistence layer (optional; only if the mode package touches DB)
 		/Service								// Services used by the mode package internally (routing, templating, csrf, etc.)
 		/Policy									// App-aware policy classes used by the mode package where needed
@@ -367,6 +384,9 @@ NOTE: This is the complete application layout after the relevant mode packages h
 
 		/Operation								// Package transport-agnostic orchestration layer
 												// Explicitly instantiated units coordinating business actions.
+
+		/Contract								// Stable public extension interfaces exposed by the provider package
+												// Use only for deliberate contracts external code may implement or type against.
 
 		/Repository								// Persistence layer (DB access, queries, mappers)
 												// Everything that knows SQL/schema/resultsets; no HTTP/CLI concerns.
@@ -418,6 +438,11 @@ CitOmni uses explicit, deterministic wiring. Each category has a simple, reviewa
 - Operations (`src/Operation/`)
 	- Extend `BaseOperation`.
 	- Instantiated explicitly by adapters using `new ...($this->app)`.
+
+- Contracts (`src/Contract/`)
+	- No base class.
+	- Interfaces only.
+	- Used for stable public extension contracts that external apps or packages may implement or type against.
 
 - Repositories (`src/Repository/`)
 	- Extend `BaseRepository`.
@@ -581,6 +606,42 @@ Over:
 - `ResetPasswordOperation`
 
 A class name that cannot be stated clearly as a concrete action is often a sign that the responsibility is not yet understood.
+
+
+## Contract
+### Responsibility
+Contracts define stable public extension interfaces.
+
+Use `src/Contract/` only when external apps or packages are expected to implement the interface or type against it as part of a documented extension point.
+
+Typical examples.
+
+- A provider package exposes a handler interface that consumer apps implement.
+- A mode package exposes a small interface for package-owned extension points.
+- A package documents the interface as part of its public API.
+
+Contracts must remain small, explicit, and implementation-free.
+
+### Prohibited Behavior
+Contracts must not be used as a default dumping ground for abstractions.
+
+Do not place the following in `src/Contract/`.
+
+- Internal convenience interfaces.
+- Interfaces created only for testing.
+- DTOs, runtime contexts, traits, helpers, or implementations.
+- Interfaces that merely mirror one concrete class without a real extension boundary.
+
+A contract should exist because external code needs a stable seam, not because an interface looks architectural.
+
+### Placement Rule
+Interfaces should live with their architectural role unless they are stable public extension contracts.
+
+Examples.
+
+- `src/Contract/JobHandlerInterface.php` is appropriate when apps/packages implement job handlers.
+- `src/Support/JobContext.php` is not a contract; it is a runtime support object.
+- `src/Service/FooInterface.php` should not exist unless `src/Service/` explicitly owns that interface pattern.
 
 ## Repository
 ### Responsibility
@@ -851,12 +912,14 @@ New developers should internalize three invariants.
 1. SQL lives in Repository.
 2. Transport shaping lives in adapters.
 3. Operation owns the "what happens" decision graph and returns domain shapes.
+4. Public extension interfaces live in Contract only when they are deliberate, stable extension seams.
 
 Wiring overview:
 - Controllers/Commands are instantiated by the transport runtime (router/CLI runner).
 - Operations are instantiated explicitly via `new ...($this->app)`.
 - Repositories are instantiated explicitly and receive `App`.
 - Services are service-map singletons accessed as `$this->app->{serviceId}`.
+- Contracts are not instantiated; they define public extension seams implemented by concrete classes elsewhere.
 
 If a change violates any invariant, it must be justified explicitly in review.
 
@@ -867,6 +930,7 @@ CitOmni architecture is a constraint system.
 
 - Minimal layers.
 - Clear responsibility boundaries around persistence and transport.
+- Stable public extension contracts only where they earn their existence.
 - Explicit wiring and deterministic merges.
 - Domain-shaped arrays as the lingua franca.
 - Operation as the transport-agnostic orchestration layer, introduced only when it earns its existence.

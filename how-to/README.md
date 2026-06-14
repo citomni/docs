@@ -23,6 +23,7 @@ They are practical implementation guides focused on concrete outcomes such as bu
 - [Controllers authoring and usage](./controllers-authoring-and-usage.md)
 - [Db service usage](./db-service-usage.md)
 - [Exception handling pattern](./exception-handling-pattern.md)
+- [Jobrunner end to end smoke test](./jobrunner-end-to-end-smoke-test.md)
 - [Log service usage](./log-service-usage.md)
 - [Migrate from litemysqli to db service](./migrate-from-litemysqli-to-db-service.md)
 - [Providers build a provider](./providers-build-a-provider.md)
