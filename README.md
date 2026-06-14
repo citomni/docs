@@ -36,6 +36,7 @@ This repository hosts the public documentation for the CitOmni Framework.
 - [how-to/db-service-usage.md](./how-to/db-service-usage.md)
 - [how-to/exception-handling-pattern.md](./how-to/exception-handling-pattern.md)
 - [how-to/jobrunner-end-to-end-smoke-test.md](./how-to/jobrunner-end-to-end-smoke-test.md)
+- [how-to/jobrunner-usage.md](./how-to/jobrunner-usage.md)
 - [how-to/log-service-usage.md](./how-to/log-service-usage.md)
 - [how-to/migrate-from-litemysqli-to-db-service.md](./how-to/migrate-from-litemysqli-to-db-service.md)
 - [how-to/providers-build-a-provider.md](./how-to/providers-build-a-provider.md)
@@ -152,4 +153,4 @@ Below is the planned layout. Some sections may be empty while we migrate content
 
 ---
 _This README was generated automatically._  
-_Last updated: 2026-06-14 14:32:42_
+_Last updated: 2026-06-14 18:41:21_
