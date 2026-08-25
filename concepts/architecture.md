@@ -736,7 +736,7 @@ CitOmni services are instantiated via explicit service maps. Registration is det
 Registration locations:
 
 - Mode packages:
-	- `citomni/http` and `citomni/cli` register their core services in `<package-root>/src/Boot/Services.php::MAP`.
+	- `citomni/http` and `citomni/cli` register their core services in `<package-root>/src/Boot/Registry.php::MAP_HTTP` / `MAP_CLI`.
 
 - Provider packages:
 	- Register services in `<package-root>/src/Boot/Registry.php::MAP_HTTP` (HTTP mode) and optionally `MAP_CLI` (CLI mode).
@@ -804,7 +804,8 @@ A shape that cannot be described clearly is often a sign that the responsibility
 CitOmni wiring is explicit.
 
 - Providers are listed in `config/providers.php`.
-- Providers contribute service maps, config overlays, and dispatch maps (HTTP routes and CLI commands) in a deterministic "last wins" merge.
+- Providers contribute service maps, config overlays, and dispatch maps in a deterministic order.
+- Config and dispatch maps use last-wins merging; service maps use left-wins PHP array union.
 - Services are accessed via `$this->app->{id}` and instantiated from the service map.
 
 Service map sources depend on context:
