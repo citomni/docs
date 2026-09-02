@@ -1,29 +1,60 @@
-# CitOmni JobRunner - Usage, Handlers, Status, and Cancellation (PHP 8.2+)
+# CitOmni JobRunner - Usage, Execution Modes, Handlers, Status, and Cancellation (PHP 8.5+)
 
-> **Run long jobs outside HTTP. Keep the UI informed. Avoid manual SQL gymnastics.**
+> **Run long jobs outside request handling. Keep execution observable. Choose the ownership model explicitly.**
 
-This document explains how to use `citomni/jobrunner` in a CitOmni application or provider package: What JobRunner is, how jobs are registered, how jobs are started, how handlers are written, how status polling works, how cancellation works, and what belongs outside the package.
+This guide explains how to use `citomni/jobrunner` in a CitOmni application or provider package.
 
-It focuses on the practical V1 runtime contract:
+It covers:
+
+- Package setup.
+- Handler registration.
+- Token/push jobs through `StartJob`.
+- Trusted/pull jobs through `EnqueueTrustedJob`.
+- The persistent `job:work` supervisor.
+- Job handlers and `JobContext`.
+- Status polling.
+- Cooperative cancellation.
+- Active lock keys.
+- Logging.
+- Security boundaries.
+- Troubleshooting.
+
+The current runtime supports two execution modes:
 
 ```text
+TOKEN / PUSH
+
 StartJob
-  -> jobrun_jobs
-  -> detached CLI worker
-  -> job:run
-  -> registered JobHandlerInterface handler
-  -> JobContext
-  -> logs, heartbeat, steps, result, terminal status
-  -> GetJobStatus / CancelJob
+  -> enqueue TOKEN-mode job
+  -> launch fresh detached job:run child
+  -> child claims queued job with worker token
+  -> shared execution lifecycle
+  -> terminal state
 ```
+
+and:
+
+```text
+TRUSTED / PULL
+
+EnqueueTrustedJob
+  -> enqueue TRUSTED-mode job
+  -> persistent job:work supervisor finds it
+  -> supervisor prepares ephemeral handoff capability
+  -> supervisor starts fresh job:run-trusted child
+  -> child claims queued job with handoff capability
+  -> shared execution lifecycle
+  -> terminal state
+```
+
+Both modes execute the actual handler in a fresh PHP process.
 
 ---
 
 **Document type:** Technical Guide  
-**Version:** 1.0  
-**Applies to:** CitOmni PHP 8.2+ and `citomni/jobrunner` V1  
+**Applies to:** Current `citomni/jobrunner` token/push and trusted/pull runtime  
 **Audience:** Application and provider developers  
-**Status:** Practical V1 guide  
+**Status:** Current usage guide  
 **Author:** CitOmni Core Team  
 **Copyright:** Copyright (c) 2012-present CitOmni
 
@@ -31,81 +62,84 @@ StartJob
 
 ## Architecture overview
 
-`citomni/jobrunner` is a provider package for explicit long-running jobs in CitOmni.
+`citomni/jobrunner` is a small database-backed lifecycle layer for explicit long-running jobs.
 
-It exists for workflows that should be started from HTTP/UI but must not run inside the HTTP request. Examples include app creation, imports, exports, deploy steps, rebuilds, reports, and other long-running administration or developer tasks.
+The package owns the generic execution envelope:
 
-The package owns the generic lifecycle:
-
-* Persist a job row.
-* Launch a detached CLI worker.
-* Claim a queued job atomically.
-* Resolve a registered handler by job type.
-* Provide a `JobContext` to the handler.
-* Persist logs, steps, heartbeat, result, and error state.
-* Support official status reads.
-* Support cooperative cancellation.
+- Persist a durable job row.
+- Enforce active lock semantics.
+- Claim queued jobs atomically.
+- Resolve a registered handler.
+- Execute the handler in a fresh PHP worker process.
+- Provide `JobContext`.
+- Persist logs, steps, heartbeat, result, and errors.
+- Support status reads.
+- Support cooperative cancellation.
+- Persist terminal state.
 
 Consumer applications and packages own the actual workflow logic.
 
-Examples:
+Examples of suitable job types:
 
 ```text
-citomni/devkit
-  -> devkit.create_app
-
-citomni/commerce
-  -> commerce.import_products
-  -> commerce.export_feed
-
-citomni/deploy
-  -> deploy.publish_app
+commerce.import_products
+commerce.export_feed
+deploy.publish_app
+reports.build_monthly_summary
+maintenance.rebuild_search_index
 ```
 
-`citomni/jobrunner` knows how to run a registered job. It does not know what creating an app, importing products, or deploying a site means. That boundary is the feature, not a paperwork exercise.
+JobRunner knows how to execute a registered job.
+
+It does not know what importing products, publishing an application, or building a report means.
+
+That boundary is intentional.
+
+For the deeper ownership and claim model, see the separate JobRunner execution-ownership architecture document in the `concepts` section of the CitOmni documentation.
 
 ---
 
 ## 1) What JobRunner is
 
-JobRunner is a small DB-backed lifecycle layer for explicit jobs.
+A JobRunner job consists of:
 
-A job is:
+- A row in `jobrun_jobs`.
+- A registered `job_type`.
+- A persisted `claim_mode`.
+- Optional payload JSON.
+- Optional active lock key.
+- Optional human-facing title.
+- A fresh worker process when execution begins.
+- Persisted logs.
+- Step progress.
+- Heartbeat timestamps.
+- A terminal result such as `succeeded`, `failed`, or `cancelled`.
 
-* A row in `jobrun_jobs`.
-* A registered `job_type`.
-* Optional payload JSON.
-* Optional active lock key.
-* A detached CLI worker execution.
-* A stream of persisted logs.
-* Step progress and heartbeat timestamps.
-* A terminal status such as `succeeded`, `failed`, or `cancelled`.
-
-Typical start flow:
+The lifecycle status values are:
 
 ```text
-HTTP Controller / CLI Command
-  -> validates app-level input
-  -> calls StartJob
-  -> returns job id / uuid to caller
-
-Detached worker
-  -> runs php bin/citomni job:run <job-id> --token=<token>
-  -> claims queued job
-  -> resolves handler
-  -> executes workflow
-  -> writes logs and status
+queued
+running
+cancel_requested
+succeeded
+failed
+cancelled
 ```
 
-Typical UI flow:
+Active statuses are:
 
 ```text
-Browser
-  -> POST start action
-  -> receives job id
-  -> polls status endpoint
-  -> displays status, steps, logs, result, or error
-  -> may request cancellation
+queued
+running
+cancel_requested
+```
+
+Terminal statuses are:
+
+```text
+succeeded
+failed
+cancelled
 ```
 
 ---
@@ -116,43 +150,60 @@ Browser
 
 It is not:
 
-* A generic queue framework.
-* A scheduler.
-* A permanent daemon.
-* A Redis/AMQP abstraction.
-* A web-based shell.
-* A generic process manager.
-* A polished administration UI.
-* A retry framework.
-* A domain workflow engine.
+- A generic message queue.
+- A Redis or AMQP abstraction.
+- A generic daemon framework.
+- A scheduler.
+- A retry framework.
+- A distributed worker farm.
+- A generic process manager.
+- A web-based shell.
+- A domain workflow engine.
+- A polished administration UI.
 
-Users should not submit raw CLI commands through HTTP. Users start registered job types, and the real workflow lives in PHP handlers.
+Trusted/pull mode does include a persistent supervisor:
+
+```text
+job:work
+```
+
+but that does not make JobRunner a general daemon framework.
+
+The supervisor has one narrow purpose:
+
+```text
+Find trusted queued jobs
+-> prepare handoff capability
+-> start one fresh trusted child
+-> wait for the child
+-> repeat
+```
+
+Applications should expose registered job types, not arbitrary commands.
 
 Good:
 
 ```text
-Start registered job type: devkit.create_app
+Start registered job type: deploy.publish_app
 ```
 
 Bad:
 
 ```text
-Run arbitrary shell command from a browser textarea.
+POST arbitrary shell command and execute it through JobRunner
 ```
-
-The browser does not need a terminal with a fancy hat.
 
 ---
 
 ## 3) Package setup
 
-Install the package as a Composer dependency. Do not copy package code into an app.
+Install JobRunner through Composer:
 
 ```bash
 composer require citomni/jobrunner
 ```
 
-Register the provider in the application provider config if the application uses explicit provider registration:
+Register the provider if the application uses explicit provider registration:
 
 ```php
 <?php
@@ -163,23 +214,37 @@ return [
 ];
 ```
 
-The package registry contributes its runtime defaults through normal CitOmni provider metadata.
-
-The relevant concepts are:
+The package registry contributes:
 
 ```text
-MAP_COMMON    -> jobRunner services shared by HTTP and CLI
-CFG_COMMON    -> default tables, handlers map, launcher config, log limits
-COMMANDS_CLI  -> job:run worker command
+MAP_COMMON
+  -> jobLogger
+  -> jobRegistry
+  -> jobLauncher
+
+CFG_COMMON
+  -> table names
+  -> handler map
+  -> PHP binary
+  -> CLI entrypoint
+  -> log chunk size
+  -> trusted worker idle sleep
+
+COMMANDS_CLI
+  -> job:run
+  -> job:run-trusted
+  -> job:work
 ```
 
-CLI commands are registered through `COMMANDS_CLI`, not routes.
+`job:run` and `job:run-trusted` are internal worker entrypoints.
+
+`job:work` is the long-lived trusted queue supervisor.
 
 ---
 
 ## 4) Database setup
 
-JobRunner uses two tables:
+JobRunner uses:
 
 ```text
 jobrun_jobs
@@ -192,15 +257,16 @@ The package schema lives in:
 sql/citomni_jobrunner.sql
 ```
 
-Apply it to the application database using your normal database migration/import process.
+Apply it through the normal database setup or migration process for the application.
 
-The important job columns are:
+Important job columns include:
 
 ```text
 id
 job_uuid
 job_type
 status
+claim_mode
 lock_key
 title
 payload_json
@@ -223,7 +289,7 @@ updated_at
 active_lock_key
 ```
 
-The important log columns are:
+Important log columns include:
 
 ```text
 id
@@ -237,19 +303,51 @@ message
 context_json
 ```
 
-Log ordering is deterministic per job:
+The current claim modes are:
 
-```sql
-ORDER BY seq ASC
+```text
+token
+trusted
 ```
 
-Do not write application SQL directly against these tables from controllers, commands, operations, or handlers. Use JobRunner operations and `JobContext`.
+The database enforces:
+
+```text
+claim_mode IN ('token', 'trusted')
+```
+
+and token-mode jobs must have a worker-token hash.
+
+Trusted jobs may begin with:
+
+```text
+worker_token_hash = NULL
+```
+
+because the trusted handoff capability is created later by the supervisor.
+
+The trusted queue lookup is supported by:
+
+```text
+(claim_mode, status, created_at, id)
+```
+
+and selection order is:
+
+```text
+created_at ASC
+id ASC
+```
+
+Do not write application SQL directly against JobRunner tables from controllers, commands, operations, services, or handlers.
+
+Use JobRunner's operations and `JobContext`.
 
 ---
 
 ## 5) Runtime configuration
 
-JobRunner configuration lives under the package-owned config root:
+JobRunner configuration lives under:
 
 ```php
 'jobrunner' => [
@@ -262,50 +360,153 @@ JobRunner configuration lives under the package-owned config root:
 	'php_binary' => 'php',
 	'cli_entrypoint' => 'bin/citomni',
 	'log_chunk_max_bytes' => 16384,
+	'trusted_worker_idle_sleep_seconds' => 3,
 ],
 ```
 
-Application and provider code usually only needs to register handlers:
+### `jobrunner.tables.jobs`
 
-```php
-<?php
-declare(strict_types=1);
+Database table for jobs.
 
-return [
-	'jobrunner' => [
-		'handlers' => [
-			'devkit.create_app' => \App\JobRunner\CreateAppJobHandler::class,
-		],
-	],
-];
-```
-
-For development smoke tests, an app may register a local handler in `config/citomni_cfg.dev.php`:
-
-```php
-<?php
-declare(strict_types=1);
-
-return [
-	'jobrunner' => [
-		'handlers' => [
-			'smoke.sleep' => \App\JobRunner\SleepJobHandler::class,
-		],
-	],
-];
-```
-
-Handler keys should be namespaced strings:
+Default:
 
 ```text
-smoke.sleep
-devkit.create_app
+jobrun_jobs
+```
+
+### `jobrunner.tables.logs`
+
+Database table for job logs.
+
+Default:
+
+```text
+jobrun_logs
+```
+
+### `jobrunner.handlers`
+
+Map of:
+
+```text
+job type -> handler class
+```
+
+Example:
+
+```php
+'jobrunner' => [
+	'handlers' => [
+		'commerce.import_products' => \App\JobRunner\ImportProductsJobHandler::class,
+	],
+],
+```
+
+### `jobrunner.php_binary`
+
+PHP executable used for worker processes.
+
+Default:
+
+```text
+php
+```
+
+### `jobrunner.cli_entrypoint`
+
+CitOmni CLI entrypoint.
+
+Default:
+
+```text
+bin/citomni
+```
+
+Relative paths are resolved against the application root.
+
+### `jobrunner.log_chunk_max_bytes`
+
+Maximum byte size per persisted log chunk.
+
+Default:
+
+```text
+16384
+```
+
+### `jobrunner.trusted_worker_idle_sleep_seconds`
+
+Sleep interval used by `job:work` when no trusted queued job exists.
+
+Default:
+
+```text
+3
+```
+
+The current implementation requires:
+
+```text
+>= 1
+```
+
+The supervisor checks the queue immediately again after a child exits. The idle sleep is not inserted between queued jobs.
+
+---
+
+## 6) Registering handlers
+
+Application and provider code registers handlers through:
+
+```text
+jobrunner.handlers
+```
+
+Example application config:
+
+```php
+<?php
+declare(strict_types=1);
+
+return [
+	'jobrunner' => [
+		'handlers' => [
+			'commerce.import_products' => \App\JobRunner\ImportProductsJobHandler::class,
+			'commerce.export_feed' => \App\JobRunner\ExportFeedJobHandler::class,
+		],
+	],
+];
+```
+
+A reusable provider can contribute handlers through its registry:
+
+```php
+<?php
+declare(strict_types=1);
+
+namespace Vendor\Package\Boot;
+
+final class Registry {
+	public const CFG_COMMON = [
+		'jobrunner' => [
+			'handlers' => [
+				'vendor.rebuild_index' => \Vendor\Package\JobRunner\RebuildIndexJobHandler::class,
+			],
+		],
+	];
+}
+```
+
+Use namespaced job type strings:
+
+```text
 commerce.import_products
 commerce.export_feed
 deploy.publish_app
+vendor.rebuild_index
 ```
 
-Avoid generic names such as:
+Avoid generic keys such as:
 
 ```text
 run
@@ -313,62 +514,15 @@ import
 create
 ```
 
-Those become ambiguous quickly. Ambiguity is a small tax that compounds monthly.
+The registered class must:
 
----
+- Exist.
+- Implement `JobHandlerInterface`.
+- Be instantiable without constructor arguments.
 
-## 6) Provider package registration
+Handler instances are cached inside a `JobRegistry` service instance.
 
-A reusable package can register its own job handlers through `Registry::CFG_COMMON`.
-
-Example provider registry:
-
-```php
-<?php
-declare(strict_types=1);
-/*
- * This file is part of the CitOmni framework.
- * Low overhead, high performance, ready for anything.
- *
- * For more information, visit https://github.com/citomni
- *
- * Copyright (c) 2012-present Lars Grove Mortensen
- * SPDX-License-Identifier: MIT
- *
- * For full copyright, trademark, and license information,
- * please see the LICENSE file distributed with this source code.
- */
-
-namespace Vendor\Package\Boot;
-
-/**
- * Declare this provider package's boot contributions.
- *
- * Behavior:
- * - Registers package-owned JobRunner handlers.
- * - Keeps routes, commands, services, and cfg in their proper maps.
- *
- * Notes:
- * - Registries are declarative.
- * - No I/O, no runtime branching, no environment reads.
- */
-final class Registry {
-	public const CFG_COMMON = [
-		'jobrunner' => [
-			'handlers' => [
-				'commerce.import_products' => \Vendor\Package\JobRunner\ImportProductsJobHandler::class,
-			],
-		],
-	];
-}
-```
-
-Important:
-
-* Register handlers in config, not in a service map.
-* Do not register operations as services.
-* Do not register CLI commands under routes.
-* Do not put routes or CLI commands inside `CFG_COMMON`.
+Actual job execution still receives fresh-process isolation because both token and trusted execution run handlers inside fresh worker PHP processes.
 
 ---
 
@@ -391,40 +545,32 @@ namespace CitOmni\JobRunner\Contract;
 use CitOmni\JobRunner\Value\JobContext;
 
 interface JobHandlerInterface {
-	/**
-	 * Run one job.
-	 *
-	 * @param JobContext $context Job context with payload, logging, steps, heartbeat, and cancellation checks.
-	 * @return array<string, mixed> Domain-shaped result data.
-	 */
 	public function run(JobContext $context): array;
 }
 ```
 
-Handlers are currently instantiated without constructor arguments.
+The returned array must be JSON-encodable.
 
-Use `JobContext::app()` when the handler needs application services, repositories, config, or package facilities.
-
-Typical handler behavior:
+A handler should normally:
 
 ```text
 1. Read and validate payload.
-2. Log start.
-3. Set the current step.
-4. Perform one bounded unit of work.
-5. Write logs or stdout/stderr lines.
-6. Update heartbeat.
-7. Check cancellation before the next unit.
-8. Return result array.
+2. Resolve authoritative application configuration.
+3. Log meaningful start information.
+4. Set the current step.
+5. Perform one bounded unit of work.
+6. Update heartbeat when appropriate.
+7. Check cancellation between bounded units.
+8. Return domain-shaped result data.
 ```
 
-Handlers must not write directly to `jobrun_jobs` or `jobrun_logs`.
+Handlers must not write directly to JobRunner tables.
 
 ---
 
 ## 8) Writing a handler
 
-Example app-local smoke handler:
+Example:
 
 ```php
 <?php
@@ -435,137 +581,63 @@ namespace App\JobRunner;
 use CitOmni\JobRunner\Contract\JobHandlerInterface;
 use CitOmni\JobRunner\Value\JobContext;
 
-/**
- * SleepJobHandler: App-local smoke handler for CitOmni JobRunner.
- *
- * Behavior:
- * - Reads runtime options from the job payload.
- * - Writes structured job logs and stdout lines.
- * - Updates step progress and heartbeat while running.
- * - Cooperates with cancellation requests.
- *
- * Notes:
- * - This is intentionally app-local smoke-test code.
- * - Do not move this into citomni/jobrunner without a deliberate API decision.
- *
- * @internal App-local smoke test only.
- */
-final class SleepJobHandler implements JobHandlerInterface {
-	private const DEFAULT_SECONDS = 10;
-	private const DEFAULT_INTERVAL_MS = 500;
-	private const MIN_SECONDS = 1;
-	private const MAX_SECONDS = 3600;
-	private const MIN_INTERVAL_MS = 100;
-	private const MAX_INTERVAL_MS = 5000;
-
-	/**
-	 * Run the sleep smoke job.
-	 *
-	 * @param JobContext $context Job context.
-	 * @return array<string, mixed> Result data.
-	 */
+final class RebuildIndexJobHandler implements JobHandlerInterface {
 	public function run(JobContext $context): array {
 		$payload = $context->payload();
-		$seconds = $this->payloadInt($payload, 'seconds', self::DEFAULT_SECONDS, self::MIN_SECONDS, self::MAX_SECONDS);
-		$intervalMs = $this->payloadInt($payload, 'interval_ms', self::DEFAULT_INTERVAL_MS, self::MIN_INTERVAL_MS, self::MAX_INTERVAL_MS);
 
-		$durationMs = $seconds * 1000;
-		$totalSteps = \max(1, (int)\ceil($durationMs / $intervalMs));
-
-		$context->info('Sleep smoke job started.', [
-			'seconds' => $seconds,
-			'interval_ms' => $intervalMs,
-			'total_steps' => $totalSteps,
-		]);
-
-		$completed = 0;
-
-		for ($step = 1; $step <= $totalSteps; $step++) {
-			if ($context->isCancellationRequested()) {
-				$context->warning('Sleep smoke job noticed cancellation request.', [
-					'completed_steps' => $completed,
-					'total_steps' => $totalSteps,
-				]);
-
-				return [
-					'cancelled' => true,
-					'completed_steps' => $completed,
-					'total_steps' => $totalSteps,
-				];
-			}
-
-			$context->setStep(
-				'sleep-' . $step,
-				'Sleep step ' . $step . ' of ' . $totalSteps,
-				$step,
-				$totalSteps
-			);
-
-			$context->stdout('Sleeping step ' . $step . ' of ' . $totalSteps . '.');
-			$context->heartbeat();
-
-			\usleep($intervalMs * 1000);
-
-			$completed++;
+		$indexKey = (string)($payload['index_key'] ?? '');
+		if ($indexKey === '') {
+			throw new \InvalidArgumentException('Payload index_key is required.');
 		}
 
-		$context->setStep('done', 'Sleep smoke job completed.', $totalSteps, $totalSteps);
-		$context->heartbeat();
-		$context->info('Sleep smoke job completed.', [
-			'completed_steps' => $completed,
-			'total_steps' => $totalSteps,
+		$context->info('Index rebuild started.', [
+			'index_key' => $indexKey,
 		]);
+
+		$context->setStep('load', 'Loading source data.', 1, 3);
+
+		if ($context->isCancellationRequested()) {
+			return [
+				'cancelled' => true,
+			];
+		}
+
+		$app = $context->app();
+
+		// Resolve repositories/services through the application as needed.
+		// Perform the real workflow here.
+
+		$context->setStep('build', 'Building index.', 2, 3);
+		$context->heartbeat();
+
+		if ($context->isCancellationRequested()) {
+			return [
+				'cancelled' => true,
+			];
+		}
+
+		$context->setStep('done', 'Index rebuild completed.', 3, 3);
+		$context->info('Index rebuild completed.');
 
 		return [
 			'cancelled' => false,
-			'completed_steps' => $completed,
-			'total_steps' => $totalSteps,
-			'seconds' => $seconds,
-			'interval_ms' => $intervalMs,
+			'index_key' => $indexKey,
 		];
-	}
-
-	/**
-	 * Read a bounded integer from payload.
-	 *
-	 * @param array<string, mixed> $payload Payload array.
-	 * @param string $key Payload key.
-	 * @param int $default Default value.
-	 * @param int $min Minimum value.
-	 * @param int $max Maximum value.
-	 * @return int Bounded integer.
-	 */
-	private function payloadInt(array $payload, string $key, int $default, int $min, int $max): int {
-		$value = $payload[$key] ?? $default;
-
-		if (\is_int($value)) {
-			$number = $value;
-		} elseif (\is_string($value) && \preg_match('/^\d+$/', $value) === 1) {
-			$number = (int)$value;
-		} else {
-			$number = $default;
-		}
-
-		if ($number < $min) {
-			return $min;
-		}
-
-		if ($number > $max) {
-			return $max;
-		}
-
-		return $number;
 	}
 }
 ```
 
+The handler owns domain workflow.
+
+JobRunner owns execution lifecycle.
+
 ---
 
-## 9) JobContext API
+## 9) `JobContext`
 
 A handler receives a `JobContext`.
 
-Useful methods:
+Identity and input:
 
 ```php
 $context->app();
@@ -573,34 +645,84 @@ $context->jobId();
 $context->jobUuid();
 $context->jobType();
 $context->payload();
+```
 
+Structured logs:
+
+```php
 $context->info('Message.');
 $context->warning('Message.');
 $context->error('Message.');
 $context->debug('Message.');
+```
 
-$context->stdout('Line for stdout-style output.');
-$context->stderr('Line for stderr-style output.');
+Logs with context:
 
-$context->setStep('step-key', 'Human-readable step label.', 1, 10);
+```php
+$context->info('Import batch completed.', [
+	'rows' => 500,
+]);
+```
+
+Stream-style logs:
+
+```php
+$context->stdout('Processed 500 rows.');
+$context->stderr('Remote command returned a warning.');
+```
+
+Progress:
+
+```php
+$context->setStep(
+	'import',
+	'Importing products.',
+	2,
+	5
+);
+```
+
+Heartbeat:
+
+```php
 $context->heartbeat();
+```
 
+Cancellation:
+
+```php
 if ($context->isCancellationRequested()) {
-	// Return cleanly between bounded units of work.
+	return [
+		'cancelled' => true,
+	];
 }
 ```
 
-Use logs for durable user-facing job history.
+Cancellation is cooperative.
 
-Use heartbeat to show that a running job is still alive.
-
-Use steps to show progress.
-
-Use cancellation checks between bounded units of work. Do not check cancellation only once at the beginning of a 30-minute method. That is not cancellation; that is optimism with a timestamp.
+Handlers should check between bounded work units, not once at the beginning of a long workflow.
 
 ---
 
-## 10) Starting a job
+## 10) Choosing an execution mode
+
+The main consumer decision is:
+
+```text
+StartJob
+```
+
+or:
+
+```text
+EnqueueTrustedJob
+```
+
+Use token/push when the process that starts the job should immediately spawn the dedicated worker and the child will inherit the correct execution environment.
+
+Use trusted/pull when queue production and final execution must be separated and a pre-established trusted supervisor should own dispatch.
+
+### Token/push
 
 Use:
 
@@ -608,21 +730,68 @@ Use:
 \CitOmni\JobRunner\Operation\StartJob
 ```
 
-Operations are instantiated explicitly:
+Runtime:
+
+```text
+caller
+-> StartJob
+-> TOKEN-mode queued row
+-> detached job:run child
+-> token claim
+-> handler
+```
+
+### Trusted/pull
+
+Use:
+
+```php
+\CitOmni\JobRunner\Operation\EnqueueTrustedJob
+```
+
+Runtime:
+
+```text
+caller
+-> EnqueueTrustedJob
+-> TRUSTED-mode queued row
+-> job:work
+-> prepared handoff
+-> fresh job:run-trusted child
+-> trusted claim
+-> handler
+```
+
+Trusted mode requires a running `job:work` supervisor.
+
+There is no implicit fallback from trusted/pull to token/push.
+
+If no supervisor is running, the trusted job remains queued.
+
+---
+
+## 11) Starting a token/push job
+
+Use:
+
+```php
+\CitOmni\JobRunner\Operation\StartJob
+```
+
+Example:
 
 ```php
 $result = (new \CitOmni\JobRunner\Operation\StartJob($this->app))->execute(
-	'devkit.create_app',
+	'commerce.import_products',
 	[
-		'app_key' => 'example_app',
-		'packages' => ['citomni/http', 'citomni/cli'],
+		'source_key' => 'supplier-a',
 	],
-	'devkit.create_app:example_app',
-	'Create example_app'
+	'commerce.import_products:supplier-a',
+	'Import supplier A products'
 );
 ```
 
-Expected result statuses:
+Possible result statuses:
 
 ```text
 started
@@ -630,49 +799,381 @@ already_active
 launch_failed
 ```
 
-Example handling in an HTTP controller:
-
-```php
-$result = (new \CitOmni\JobRunner\Operation\StartJob($this->app))->execute(
-	'devkit.create_app',
-	$payload,
-	$lockKey,
-	'Create app'
-);
-
-if ($result['status'] === \CitOmni\JobRunner\Operation\StartJob::RESULT_STARTED) {
-	// Adapter decides how to return JSON, redirect, or render a template.
-}
-```
-
-The operation returns job identity when a job is started:
+Successful start:
 
 ```php
 [
 	'status' => 'started',
 	'job_id' => 123,
 	'job_uuid' => '...',
-	'job_type' => 'devkit.create_app',
+	'job_type' => 'commerce.import_products',
 ]
 ```
 
-If an active lock already exists:
+Already active:
 
 ```php
 [
 	'status' => 'already_active',
 	'job_id' => 122,
 	'job_uuid' => '...',
-	'job_type' => 'devkit.create_app',
+	'job_type' => 'commerce.import_products',
 	'job_status' => 'running',
 ]
 ```
 
+Launch submission failure:
+
+```php
+[
+	'status' => 'launch_failed',
+	'job_id' => 123,
+	'job_uuid' => '...',
+	'job_type' => 'commerce.import_products',
+	'error_reason_code' => 'launch_failed',
+]
+```
+
+`StartJob`:
+
+1. Mints a random raw worker token.
+2. Stores only its SHA-256 hash through the shared enqueue workflow.
+3. Creates the row in `token` claim mode.
+4. Launches the detached `job:run` worker.
+5. Clears the local raw token after launch submission.
+
+The job becomes `running` only when the child successfully claims it.
+
 ---
 
-## 11) Lock keys
+## 12) Enqueueing a trusted/pull job
 
-A lock key prevents duplicate active jobs.
+Use:
+
+```php
+\CitOmni\JobRunner\Operation\EnqueueTrustedJob
+```
+
+Example:
+
+```php
+$result = (new \CitOmni\JobRunner\Operation\EnqueueTrustedJob($this->app))->execute(
+	'deploy.publish_app',
+	[
+		'app_id' => 42,
+		'environment' => 'production',
+	],
+	'deploy.publish_app:42:production',
+	'Publish application'
+);
+```
+
+Possible result statuses:
+
+```text
+queued
+already_active
+```
+
+Successful enqueue:
+
+```php
+[
+	'status' => 'queued',
+	'job_id' => 201,
+	'job_uuid' => '...',
+	'job_type' => 'deploy.publish_app',
+]
+```
+
+Already active:
+
+```php
+[
+	'status' => 'already_active',
+	'job_id' => 198,
+	'job_uuid' => '...',
+	'job_type' => 'deploy.publish_app',
+	'job_status' => 'running',
+]
+```
+
+A newly queued trusted job begins conceptually as:
+
+```text
+status = queued
+claim_mode = trusted
+worker_token_hash = NULL
+attempts = 0
+started_at = NULL
+```
+
+`EnqueueTrustedJob` does not launch a worker.
+
+Execution begins only when `job:work` dispatches it and a fresh trusted child successfully claims it.
+
+---
+
+## 13) Do not call `EnqueueJob` directly in normal consumer code
+
+`EnqueueJob` is the shared creation primitive used by:
+
+```text
+StartJob
+EnqueueTrustedJob
+```
+
+It accepts the explicit claim mode and worker-token hash.
+
+Normal application code should usually choose the higher-level operation:
+
+```text
+StartJob
+```
+
+or:
+
+```text
+EnqueueTrustedJob
+```
+
+That keeps execution ownership decisions explicit and avoids application code constructing internal claim state manually.
+
+---
+
+## 14) Running the trusted supervisor
+
+Start:
+
+```bash
+php bin/citomni job:work
+```
+
+The command prints:
+
+```text
+Trusted JobRunner worker started.
+```
+
+and then enters the trusted queue loop.
+
+Current behavior:
+
+```text
+find oldest trusted queued job
+
+if none:
+    sleep configured idle interval
+    check again
+
+if found:
+    mint ephemeral handoff token
+    persist/replace handoff hash while row stays queued
+    start fresh job:run-trusted child synchronously
+    wait for child
+    check queue again immediately
+```
+
+Default idle sleep:
+
+```text
+3 seconds
+```
+
+The supervisor is intentionally persistent.
+
+The actual handler is not.
+
+Each trusted job receives a fresh PHP child process.
+
+---
+
+## 15) Run `job:work` under the intended execution environment
+
+Trusted/pull exists specifically so queue production and execution can be separated.
+
+Run `job:work` under the process identity and environment that should own trusted execution.
+
+That process environment is inherited by the fresh `job:run-trusted` child.
+
+JobRunner itself does not:
+
+- Switch OS users.
+- Install services.
+- Configure schedulers.
+- Manage host startup policy.
+
+The host decides how `job:work` is started and kept running.
+
+Examples may include:
+
+- Manual CLI session.
+- Operating-system service manager.
+- Operating-system scheduler started at login or boot.
+- Container/process supervisor.
+
+Those mechanisms are outside JobRunner.
+
+---
+
+## 16) Trusted supervisor concurrency
+
+The current trusted V1 model is designed around one supervisor processing one trusted child at a time.
+
+Do not deliberately run several `job:work` supervisors unless you have reviewed the handoff behavior and intentionally designed for it.
+
+The guarded child claim still prevents two children from both successfully changing the same job from `queued` to `running`.
+
+However, multiple supervisors may repeatedly replace a queued job's prepared handoff hash and cause unnecessary child launches.
+
+One trusted supervisor is the intended operating model.
+
+---
+
+## 17) Internal worker commands
+
+JobRunner registers:
+
+```text
+job:run
+job:run-trusted
+job:work
+```
+
+### `job:run`
+
+Internal token/push child:
+
+```text
+php bin/citomni job:run <job-id> --token=<worker-token>
+```
+
+Normal application code should not manually construct this command.
+
+Use `StartJob`.
+
+### `job:run-trusted`
+
+Internal trusted child:
+
+```text
+php bin/citomni job:run-trusted <job-id> --token=<handoff-token>
+```
+
+Normal application code should not construct this command.
+
+`job:work` creates and launches the trusted child.
+
+### `job:work`
+
+Public operational supervisor command:
+
+```text
+php bin/citomni job:work
+```
+
+This is the command normally run directly when using trusted/pull mode.
+
+---
+
+## 18) Worker ownership and capabilities
+
+Both execution modes require the concrete worker to prove ownership before handler execution.
+
+### Token/push
+
+Capability is created at enqueue:
+
+```text
+raw worker token
+-> SHA-256 hash persisted
+-> fresh job:run child receives raw token
+-> atomic token claim
+```
+
+### Trusted/pull
+
+Capability is created at dispatch:
+
+```text
+trusted job is queued without token
+-> supervisor creates raw handoff token
+-> SHA-256 hash persisted/replaced
+-> fresh job:run-trusted child receives raw token
+-> atomic trusted claim
+```
+
+Raw worker and handoff tokens must not be:
+
+- Logged.
+- Returned to application callers.
+- Persisted in plaintext.
+- Exposed in UI.
+- Stored in job payloads.
+
+Only the hash is stored.
+
+---
+
+## 19) Shared execution lifecycle
+
+After ownership claim, both modes use the same execution path.
+
+Conceptually:
+
+```text
+RunQueuedJob
+  -> token claim
+  -> ExecuteRunningJob
+
+RunTrustedJob
+  -> trusted handoff claim
+  -> ExecuteRunningJob
+```
+
+`ExecuteRunningJob` owns:
+
+- Job loading.
+- Start logging.
+- Payload decoding.
+- Handler resolution.
+- `JobContext` construction.
+- Handler execution.
+- Cancellation resolution.
+- Result encoding.
+- Failure capture.
+- Terminal transitions.
+- Terminal logging.
+
+This prevents token and trusted workers from drifting into separate job semantics.
+
+---
+
+## 20) Fresh process per job
+
+`job:work` is long-lived, but it does not execute application handlers directly.
+
+Every trusted job is executed in a fresh child process.
+
+The existing token/push path also executes through a fresh child.
+
+This means each actual job receives fresh process-local state, including:
+
+- Fresh `App`.
+- Fresh service instances.
+- Fresh `JobRegistry`.
+- Fresh handler instances.
+- Fresh PHP runtime state.
+
+This is important for long-running worker safety.
+
+Application handlers do not need special reset hooks merely because trusted supervision is persistent.
+
+---
+
+## 21) Lock keys
+
+A lock key prevents multiple active jobs from sharing the same logical lock.
 
 Active statuses are:
 
@@ -682,7 +1183,7 @@ running
 cancel_requested
 ```
 
-Terminal statuses do not hold the lock:
+Terminal statuses release the generated active lock:
 
 ```text
 succeeded
@@ -690,62 +1191,25 @@ failed
 cancelled
 ```
 
-Typical lock key examples:
+Examples:
 
 ```text
-devkit.create_app:example_app
-commerce.import_products
-commerce.export_feed:shop_dk
+commerce.import_products:supplier-a
+deploy.publish_app:42:production
+reports.monthly:2026-09
 ```
 
 Use a lock key when only one active instance should exist.
 
-Pass `null` or an empty value when parallel jobs are allowed.
+Use `null` when parallel jobs are valid.
 
-Example:
+The database unique `active_lock_key` is authoritative.
 
-```php
-// One active create-app job per app key.
-$lockKey = 'devkit.create_app:' . $appKey;
-
-// Parallel report jobs allowed.
-$lockKey = null;
-```
-
-The database enforces active locks through `active_lock_key`, so the lock is not just a friendly suggestion in a comment.
+The application-level pre-check is only a friendly fast path.
 
 ---
 
-## 12) Worker execution
-
-The detached worker is launched by JobRunner.
-
-Conceptual command:
-
-```text
-php bin/citomni job:run <job-id> --token=<worker-token>
-```
-
-The raw worker token is only passed to the worker process.
-
-The database stores only:
-
-```text
-hash('sha256', $workerToken)
-```
-
-Rules:
-
-* Do not show worker tokens in UI.
-* Do not log worker tokens.
-* Do not manually run `job:run` unless you are debugging the worker contract.
-* Normal application code starts jobs through `StartJob`.
-
-The worker claims queued jobs atomically. A wrong token or non-queued status results in claim failure.
-
----
-
-## 13) Reading job status
+## 22) Reading job status
 
 Use:
 
@@ -763,14 +1227,21 @@ $result = (new \CitOmni\JobRunner\Operation\GetJobStatus($this->app))->execute(
 );
 ```
 
-Suggested parameters:
+Arguments:
 
-```php
-$afterSeq = 0;
-$logLimit = 200;
+```text
+jobId    >= 1
+afterSeq >= 0
+logLimit >= 1
 ```
 
-When found, the operation returns a stable read model:
+`logLimit` is capped at:
+
+```text
+1000
+```
+
+When the job exists:
 
 ```php
 [
@@ -778,35 +1249,26 @@ When found, the operation returns a stable read model:
 	'job' => [
 		'id' => 123,
 		'uuid' => '...',
-		'type' => 'devkit.create_app',
-		'title' => 'Create app',
+		'type' => 'commerce.import_products',
+		'title' => 'Import products',
 		'status' => 'running',
 		'is_active' => true,
 		'is_terminal' => false,
 		'is_stale' => false,
-		'current_step_key' => 'composer-create-project',
-		'current_step_label' => 'Running composer create-project.',
+		'current_step_key' => 'import',
+		'current_step_label' => 'Importing products.',
 		'step_index' => 2,
-		'step_total' => 8,
-		'created_at' => '2026-06-14 15:54:01.671897',
-		'queued_at' => '2026-06-14 15:54:01.671897',
-		'started_at' => '2026-06-14 15:54:02.013001',
-		'heartbeat_at' => '2026-06-14 15:54:04.120111',
+		'step_total' => 5,
+		'created_at' => '...',
+		'queued_at' => '...',
+		'started_at' => '...',
+		'heartbeat_at' => '...',
 		'finished_at' => null,
-		'updated_at' => '2026-06-14 15:54:04.120111',
+		'updated_at' => '...',
 	],
 	'logs' => [
-		[
-			'seq' => 1,
-			'created_at' => '2026-06-14 15:54:02.013001',
-			'level' => 'info',
-			'stream' => '',
-			'step_key' => null,
-			'message' => 'Job started.',
-			'context' => null,
-		],
 	],
-	'last_log_seq' => 1,
+	'last_log_seq' => 12,
 	'result' => null,
 	'error' => null,
 ]
@@ -825,57 +1287,86 @@ When not found:
 ]
 ```
 
-The read model is transport-agnostic. A controller may turn it into JSON. A CLI command may print it. A template may render it. The operation itself does none of those things.
+The current public status read model does not expose every persistence field.
+
+For example, `claim_mode`, `attempts`, and `worker_token_hash` are not part of the current `GetJobStatus` job shape.
+
+Do not build UI against repository internals when the operation already provides the intended read contract.
 
 ---
 
-## 14) Incremental polling
+## 23) Incremental log polling
 
-For UI polling, use `last_log_seq` as the next cursor.
+Use `last_log_seq` as the next cursor.
 
-Initial request:
-
-```php
-$status = (new \CitOmni\JobRunner\Operation\GetJobStatus($this->app))->execute($jobId, 0, 200);
-```
-
-Response:
+Initial poll:
 
 ```php
-[
-	'logs' => [
-		['seq' => 1, 'message' => 'Job started.'],
-		['seq' => 2, 'message' => 'Workflow started.'],
-	],
-	'last_log_seq' => 2,
-]
+$status = (new \CitOmni\JobRunner\Operation\GetJobStatus($this->app))->execute(
+	$jobId,
+	0,
+	200
+);
 ```
 
-Next request:
+Later:
 
 ```php
-$status = (new \CitOmni\JobRunner\Operation\GetJobStatus($this->app))->execute($jobId, 2, 200);
+$status = (new \CitOmni\JobRunner\Operation\GetJobStatus($this->app))->execute(
+	$jobId,
+	$previousLastLogSeq,
+	200
+);
 ```
 
-This returns logs where:
+The incremental repository query uses:
 
 ```text
-seq > 2
+seq > afterSeq
 ```
 
-Important cursor rule:
+Correct:
 
 ```text
-last_log_seq = highest returned seq
+next afterSeq = last_log_seq
 ```
 
-If no new logs are returned, `last_log_seq` should remain the incoming cursor.
+Incorrect:
 
-Do not treat `last_log_seq` as the next expected row number. It is the last row the caller has seen.
+```text
+next afterSeq = last_log_seq + 1
+```
+
+If no new logs are returned, `last_log_seq` remains the incoming cursor.
 
 ---
 
-## 15) Cancelling a job
+## 24) Recent logs vs. incremental logs
+
+When:
+
+```text
+afterSeq = 0
+```
+
+the current status operation returns the most recent logs up to the requested limit, normalized into ascending sequence order.
+
+When:
+
+```text
+afterSeq > 0
+```
+
+it returns logs after that sequence cursor.
+
+This allows both:
+
+- Initial status page hydration.
+- Incremental polling.
+
+---
+
+## 25) Cancelling a job
 
 Use:
 
@@ -889,23 +1380,33 @@ Example:
 $result = (new \CitOmni\JobRunner\Operation\CancelJob($this->app))->execute($jobId);
 ```
 
-Cancellation is cooperative in V1.
-
-Implemented behavior:
+Current behavior:
 
 ```text
 queued           -> cancelled
 running          -> cancel_requested
 cancel_requested -> already_cancel_requested
-succeeded        -> already_terminal
-failed           -> already_terminal
-cancelled        -> already_terminal
+terminal         -> already_terminal
 missing          -> not_found
 ```
 
-A running job is not marked directly as `cancelled`.
+Possible result statuses:
 
-Instead:
+```text
+cancelled
+cancel_requested
+already_cancel_requested
+already_terminal
+not_found
+```
+
+Queued job:
+
+```text
+queued -> cancelled
+```
+
+Running job:
 
 ```text
 running -> cancel_requested
@@ -921,303 +1422,512 @@ if ($context->isCancellationRequested()) {
 }
 ```
 
-Then the worker completes the terminal transition:
+After the handler returns, the worker completes:
 
 ```text
 cancel_requested -> cancelled
 ```
 
-Example result for a running job:
+Cancellation is cooperative.
 
-```php
-[
-	'status' => 'cancel_requested',
-	'job_id' => 123,
-	'job_uuid' => '...',
-	'job_type' => 'devkit.create_app',
-	'previous_status' => 'running',
-	'new_status' => 'cancel_requested',
-]
-```
-
-Example result for a terminal job:
-
-```php
-[
-	'status' => 'already_terminal',
-	'job_id' => 123,
-	'job_uuid' => '...',
-	'job_type' => 'devkit.create_app',
-	'previous_status' => 'succeeded',
-	'new_status' => 'succeeded',
-]
-```
-
-Hard kill of active child processes is intentionally out of scope for V1.
+JobRunner does not hard-kill arbitrary child processes in the current model.
 
 ---
 
-## 16) Suggested HTTP endpoints
+## 26) Cancellation races
 
-`citomni/jobrunner` does not need to own public HTTP routes in V1.
+The guarded state transitions intentionally resolve common races.
 
-A consumer app or provider can expose endpoints using the operations:
+### Cancellation wins before worker claim
 
 ```text
-POST /_devkit/jobs              -> StartJob
-GET  /_devkit/jobs/{id}         -> GetJobStatus
-POST /_devkit/jobs/{id}/cancel  -> CancelJob
+queued -> cancelled
+```
+
+The later worker claim requires:
+
+```text
+status = queued
+```
+
+and therefore fails.
+
+No handler executes.
+
+### Worker claim wins first
+
+```text
+queued -> running
+```
+
+Cancellation then becomes:
+
+```text
+running -> cancel_requested
+```
+
+The existing cooperative cancellation flow applies.
+
+### Cancellation reaches the final success window
+
+`markSucceeded()` accepts only:
+
+```text
+running -> succeeded
+```
+
+If cancellation has already changed the state to:
+
+```text
+cancel_requested
+```
+
+the success transition misses.
+
+The worker re-checks state and completes cancellation instead.
+
+---
+
+## 27) Logging
+
+Use JobRunner logs for durable job history.
+
+Structured examples:
+
+```php
+$context->info('Import started.', [
+	'source_key' => $sourceKey,
+]);
+
+$context->warning('Skipped row.', [
+	'row' => $rowNumber,
+]);
+
+$context->error('Remote validation failed.');
+```
+
+Stream examples:
+
+```php
+$context->stdout('Processed 500 rows.');
+$context->stderr('Remote tool returned a warning.');
+```
+
+Avoid logging:
+
+- Worker tokens.
+- Trusted handoff tokens.
+- Passwords.
+- API keys.
+- Private keys.
+- Full environment dumps.
+- Giant unbounded output.
+
+JobRunner normalizes UTF-8 and chunks long messages according to:
+
+```text
+jobrunner.log_chunk_max_bytes
+```
+
+That is a safety mechanism, not permission to log unlimited noise.
+
+---
+
+## 28) Error handling
+
+Handlers should usually fail fast.
+
+The shared worker boundary catches handler/runtime failures and persists:
+
+```text
+status = failed
+error_class
+error_reason_code
+error_message
+finished_at
+```
+
+`JobRunnerException` reason codes are preserved where available.
+
+Example:
+
+```text
+result_not_encodable
+invalid_payload_json
+invalid_payload_shape
+```
+
+Do not wrap an entire handler in a broad catch merely to suppress failures.
+
+Prefer:
+
+```text
+validate early
+perform work
+let unrecoverable failure bubble
+```
+
+Catch locally only when recovery is explicit and correct.
+
+---
+
+## 29) Result encoding
+
+A handler must return an array that can be JSON-encoded.
+
+If result encoding fails, the job is failed with:
+
+```text
+result_not_encodable
+```
+
+A handler that completes its domain work but returns non-encodable data has not satisfied the JobRunner result contract.
+
+Keep results:
+
+- Structured.
+- Small enough to persist sensibly.
+- Free of secrets.
+- JSON-safe.
+
+---
+
+## 30) Payload encoding
+
+Payload is JSON-encoded when the job is created.
+
+An empty payload is stored as:
+
+```text
+NULL
+```
+
+Invalid structured payload data fails early rather than being silently altered.
+
+The execution lifecycle decodes payload back into an array.
+
+Handlers should validate their own domain fields.
+
+JobRunner validates storage shape, not application meaning.
+
+---
+
+## 31) Security: registered intent, not arbitrary execution
+
+JobRunner is safest when job payload describes an allowed application intent.
+
+Good:
+
+```php
+[
+	'app_id' => 42,
+	'environment' => 'production',
+]
+```
+
+The handler resolves:
+
+- Authoritative target.
+- Allowed host.
+- Credentials.
+- Paths.
+- Tool options.
+
+Dangerous:
+
+```php
+[
+	'host' => $untrustedHost,
+	'command' => $arbitraryCommand,
+	'private_key' => $rawKey,
+]
+```
+
+Trusted/pull mode separates producer and executor, but the trusted queue is still a security-sensitive bridge.
+
+A caller that can enqueue a trusted registered job may be able to request the action represented by that job type.
+
+Therefore:
+
+- Authorize before enqueue.
+- Validate bounded payload.
+- Keep handler contracts narrow.
+- Resolve privileged execution details from authoritative application data.
+- Never treat JobRunner as an arbitrary shell transport.
+
+---
+
+## 32) Security: do not put secrets in JobRunner data
+
+Do not store raw credentials in:
+
+```text
+payload_json
+result_json
+context_json
+job logs
+error_message
+title
+lock_key
+```
+
+Prefer stable identifiers or references.
+
+Example:
+
+```php
+[
+	'profile_id' => 3,
+]
+```
+
+The actual trusted handler can resolve credentials through the appropriate application service inside the execution context.
+
+JobRunner is an orchestration and lifecycle package, not a secret store.
+
+---
+
+## 33) Token/push security rules
+
+For `StartJob`:
+
+- Raw worker token is minted locally.
+- Only the SHA-256 hash is persisted.
+- Raw token is passed to the fixed internal child command.
+- Raw token is not returned to the caller.
+- Raw token is not logged.
+- The token worker must satisfy `claim_mode = token`.
+- The row must still be `queued`.
+- The hash must match.
+
+A failed token claim does not execute the handler.
+
+---
+
+## 34) Trusted/pull security rules
+
+For `EnqueueTrustedJob` and `job:work`:
+
+- Trusted job is enqueued without a worker token hash.
+- Supervisor selects only `claim_mode = trusted` and `status = queued`.
+- Supervisor generates an ephemeral handoff token.
+- Only the SHA-256 hash is persisted.
+- The row remains `queued` during preparation.
+- The fresh trusted child must present the matching handoff token.
+- The child itself performs the guarded `queued -> running` transition.
+- A stale or replayed handoff token cannot execute the job after the row has changed state.
+
+Trusted does not mean "unclaimed".
+
+It means the trusted supervisor controls dispatch, while the concrete child still proves ownership.
+
+---
+
+## 35) Why trusted rows remain queued during dispatch preparation
+
+The supervisor does not mark a job `running`.
+
+That transition belongs to the actual child.
+
+This preserves the meaning of:
+
+```text
+started_at
+attempts
+heartbeat_at
+```
+
+Before the child successfully claims:
+
+```text
+status = queued
+attempts = 0
+started_at = NULL
+```
+
+A failed or stale pre-claim child does not create a fake execution attempt.
+
+---
+
+## 36) Trusted handoff replacement
+
+A trusted queued row may already contain a handoff hash.
+
+The supervisor still considers it eligible.
+
+This allows recovery from:
+
+```text
+handoff prepared
+-> supervisor/process failure before successful child claim
+```
+
+A later supervisor iteration can replace the old hash with a new one.
+
+That replacement fences the stale child capability.
+
+Therefore trusted queue discovery intentionally does not require:
+
+```text
+worker_token_hash IS NULL
+```
+
+---
+
+## 37) Trusted child exit codes
+
+`job:work` starts `job:run-trusted` synchronously and waits for the child.
+
+A non-zero child process exit code does not automatically stop the supervisor.
+
+Examples include:
+
+```text
+handler failed
+-> job persisted as failed
+-> child exits non-zero
+```
+
+The supervisor continues to later jobs.
+
+If the child exits non-zero and the job is still `queued`, the current supervisor sleeps for the configured idle interval before trying again.
+
+This avoids a tight hot loop around a repeatedly unclaimed queued job.
+
+---
+
+## 38) Suggested HTTP integration
+
+JobRunner does not need to own application-specific HTTP routes.
+
+A consumer application may expose routes such as:
+
+```text
+POST /jobs/action
+GET  /jobs/{id}
+POST /jobs/{id}/cancel
 ```
 
 Controller responsibilities:
 
-* Parse and validate HTTP input.
-* Enforce authentication and authorization.
-* Verify CSRF for state-changing requests.
-* Call the relevant operation.
-* Convert the domain-shaped result into JSON, redirect, flash message, or template data.
+- Parse request.
+- Authenticate.
+- Authorize.
+- Verify CSRF where required.
+- Validate application input.
+- Choose `StartJob` or `EnqueueTrustedJob`.
+- Call `GetJobStatus`.
+- Call `CancelJob`.
+- Shape HTTP response.
 
-Operation responsibilities:
+Operations remain transport-agnostic.
 
-* Own transport-agnostic workflow decisions.
-* Return stable arrays.
-* Avoid HTTP concepts.
-
-Do not let controllers perform SQL status updates. That was useful during early smoke testing. It is not the API.
+Do not let controllers update JobRunner tables directly.
 
 ---
 
-## 17) App-local CLI smoke commands
-
-During development, app-local CLI commands are useful for testing.
-
-Example command map:
+## 39) Token/push HTTP example
 
 ```php
-<?php
-declare(strict_types=1);
-
-return [
-	'job:smoke:sleep' => [
-		'command' => \App\Cli\Command\StartSleepJobCommand::class,
-		'description' => 'Start a local sleep smoke job through CitOmni JobRunner.',
-	],
-	'job:smoke:status' => [
-		'command' => \App\Cli\Command\JobStatusSmokeCommand::class,
-		'description' => 'Read a local JobRunner smoke job status.',
-	],
-	'job:smoke:cancel' => [
-		'command' => \App\Cli\Command\JobCancelSmokeCommand::class,
-		'description' => 'Request cancellation for a local JobRunner smoke job.',
-	],
-];
+$result = (new \CitOmni\JobRunner\Operation\StartJob($this->app))->execute(
+	'commerce.import_products',
+	$payload,
+	$lockKey,
+	'Import products'
+);
 ```
 
-Basic smoke sequence:
+Use this when the HTTP-started detached child will inherit the intended execution environment.
 
-```bash
-php bin/citomni job:smoke:sleep --seconds=8 --interval-ms=500
-php bin/citomni job:smoke:status <job-id> --after-seq=0 --limit=100
-```
-
-Cancellation smoke sequence:
-
-```bash
-php bin/citomni job:smoke:sleep --seconds=120 --interval-ms=1000
-php bin/citomni job:smoke:cancel <job-id>
-php bin/citomni job:smoke:status <job-id> --after-seq=0 --limit=100
-```
-
-Expected cancellation flow:
-
-```text
-running -> cancel_requested -> cancelled
-```
-
-Expected logs:
-
-```text
-Sleep smoke job noticed cancellation request.
-Job cancelled.
-```
-
-Smoke commands are application test helpers. They do not belong in `citomni/jobrunner` unless the package deliberately decides to ship official testing commands.
+The controller may then redirect to a status page or return the job id.
 
 ---
 
-## 18) Status lifecycle
-
-V1 statuses:
-
-```text
-queued
-running
-cancel_requested
-succeeded
-failed
-cancelled
-```
-
-Active statuses:
-
-```text
-queued
-running
-cancel_requested
-```
-
-Terminal statuses:
-
-```text
-succeeded
-failed
-cancelled
-```
-
-Expected transitions:
-
-```text
-queued -> running
-queued -> cancelled
-running -> succeeded
-running -> failed
-running -> cancel_requested
-cancel_requested -> cancelled
-cancel_requested -> failed
-```
-
-Important rule:
-
-```text
-markSucceeded accepts only running -> succeeded.
-```
-
-If `cancel_requested` wins the final race before success is persisted, `RunQueuedJob` completes the job as `cancelled`.
-
-That protects users from seeing a job as successful after they successfully requested cancellation in the final window.
-
----
-
-## 19) Error handling
-
-The worker boundary records failures on the job.
-
-A handler exception should result in:
-
-```text
-status = failed
-error_class = <exception class>
-error_reason_code = <package reason code when available>
-error_message = <safe message>
-```
-
-Handler code should usually fail fast.
-
-Avoid this pattern inside handlers:
+## 40) Trusted/pull HTTP example
 
 ```php
-try {
-	// Almost the whole workflow.
-} catch (\Throwable $e) {
-	// Swallow and pretend all is fine.
-}
+$result = (new \CitOmni\JobRunner\Operation\EnqueueTrustedJob($this->app))->execute(
+	'deploy.publish_app',
+	$payload,
+	$lockKey,
+	'Publish application'
+);
 ```
 
-Prefer:
+The HTTP request returns after durable enqueue.
+
+It does not launch the actual job child.
+
+The separately running trusted supervisor handles execution later.
+
+---
+
+## 41) CLI application integration
+
+Application CLI commands may use the same operations.
+
+Example token/push producer:
 
 ```php
-// Validate input early.
-// Let real failures bubble to the worker boundary.
+$result = (new \CitOmni\JobRunner\Operation\StartJob($this->app))->execute(...);
 ```
 
-Catch locally only when the failure is genuinely recoverable and the fallback is explicit.
-
----
-
-## 20) Logging guidance
-
-Use job logs for meaningful job history.
-
-Good logs:
+Example trusted producer:
 
 ```php
-$context->info('Import started.', ['source' => $sourceKey]);
-$context->stdout('Processed 500 rows.');
-$context->warning('Skipped row with missing SKU.', ['row' => $rowNumber]);
+$result = (new \CitOmni\JobRunner\Operation\EnqueueTrustedJob($this->app))->execute(...);
 ```
 
-Avoid:
-
-* Secrets.
-* Raw tokens.
-* Full environment dumps.
-* Giant command output without chunking or caps.
-* Logging every tiny inner-loop iteration when a summary would do.
-
-JobRunner chunks long log messages according to package config. That is a safety net, not a target.
+The mode decision is about ownership and execution environment, not whether the producer happened to be HTTP or CLI.
 
 ---
 
-## 21) Security and authorization
+## 42) Environment and hosting notes
 
-JobRunner operations do not decide who is allowed to start, view, or cancel a job.
+### Token/push requirements
 
-That belongs in the adapter/application layer.
+`StartJob` requires the producer environment to be able to submit a detached PHP CLI process.
 
-An HTTP controller should decide:
-
-* Is the user authenticated?
-* Is the user allowed to start this job type?
-* Is the user allowed to view this job?
-* Is the user allowed to cancel this job?
-* Is the request protected by CSRF where needed?
-
-Do not expose arbitrary job type starts to untrusted users.
-
-Good:
+If process launch is blocked:
 
 ```text
-Admin clicks "Create app" -> controller starts devkit.create_app with validated payload.
+launch_failed
 ```
 
-Bad:
+or a launch exception is surfaced.
 
-```text
-POST job_type=anything&payload={...}
-```
+Do not silently fall back to executing the job inside the request.
 
-Registered handlers reduce risk, but they do not replace authorization.
+### Trusted/pull requirements
+
+Trusted enqueue only needs:
+
+- JobRunner persistence.
+- Registered handler configuration.
+
+Actual execution additionally requires a running `job:work` process with:
+
+- Database access.
+- PHP CLI access.
+- Access to the configured CLI entrypoint.
+- Whatever execution environment the trusted handler itself needs.
+
+A trusted job may legitimately remain queued while no supervisor is available.
+
+That is different from a token/push job whose detached child failed to launch.
 
 ---
 
-## 22) Environment and hosting notes
-
-JobRunner requires PHP to be able to start a CLI worker process.
-
-This is generally suitable for:
-
-* Local development.
-* Controlled servers.
-* VPS/dedicated environments.
-* Hosting where PHP process launch is allowed.
-
-Restrictive shared hosting may block process launch. In that case `StartJob` should return or surface launch failure, not fall back to running the job inline in HTTP.
-
-Do not convert a detached job into a synchronous HTTP job because the host is grumpy. That reintroduces the timeout problem JobRunner exists to avoid.
-
----
-
-## 23) Troubleshooting
-
-### Job stays queued
+## 43) Troubleshooting: token job stays queued
 
 Likely causes:
 
-* CLI entrypoint path is wrong.
-* PHP binary config is wrong.
-* Process launch is blocked.
-* `job:run` command is not registered.
-* Worker token was not passed correctly.
+- PHP binary is wrong.
+- CLI entrypoint is wrong.
+- Detached process submission failed.
+- `job:run` is not registered.
+- Worker token was not delivered correctly.
+- Child process cannot start.
 
 Check:
 
@@ -1227,164 +1937,335 @@ jobrunner.cli_entrypoint
 COMMANDS_CLI contains job:run
 ```
 
-### Job fails immediately
+A token/push job normally should not sit queued indefinitely after a successful `StartJob` launch.
+
+---
+
+## 44) Troubleshooting: trusted job stays queued
+
+First question:
+
+```text
+Is job:work running?
+```
+
+If not, queued state is expected.
+
+If it is running, check:
+
+- The supervisor has database access.
+- `job:work` is registered.
+- `job:run-trusted` is registered.
+- `jobrunner.php_binary` is correct.
+- `jobrunner.cli_entrypoint` exists.
+- The trusted child can be launched.
+- The job type handler exists in the supervisor/child config.
+- The row uses `claim_mode = trusted`.
+
+Do not manually rewrite the row to `running`.
+
+The child must own the claim.
+
+---
+
+## 45) Troubleshooting: `job:work` exits immediately
+
+The current command calls an infinite supervisor operation.
+
+An immediate exit normally indicates an exception before or inside the loop.
+
+Check:
+
+```text
+jobrunner.trusted_worker_idle_sleep_seconds >= 1
+database connectivity
+configured table names
+PHP binary / CLI entrypoint when dispatch occurs
+```
+
+Let the global CLI error handling surface the real exception.
+
+---
+
+## 46) Troubleshooting: trusted job repeatedly remains queued
+
+If a trusted child exits non-zero while the row is still queued, the supervisor waits the idle interval before retrying.
+
+Possible causes include:
+
+- Trusted child cannot claim the prepared row.
+- Child configuration differs from supervisor configuration.
+- Job state changes before claim.
+- Internal handoff delivery is failing.
+
+Inspect persisted job state and application error handling.
+
+Do not expose or print the raw handoff token as a debugging shortcut.
+
+---
+
+## 47) Troubleshooting: job fails immediately
 
 Likely causes:
 
-* Handler class is missing.
-* Handler does not implement `JobHandlerInterface`.
-* Payload is invalid for the handler.
-* Handler result cannot be JSON encoded.
+- Handler is not registered.
+- Handler class does not exist.
+- Handler does not implement `JobHandlerInterface`.
+- Handler cannot be instantiated without arguments.
+- Payload is invalid for the handler.
+- Stored payload JSON is invalid.
+- Handler result cannot be JSON-encoded.
+- Handler throws.
 
-Check `error_class`, `error_reason_code`, and `error_message` through `GetJobStatus`.
+Use `GetJobStatus` and inspect:
 
-### Duplicate job is not started
+```text
+error.class
+error.reason_code
+error.message
+logs
+```
+
+---
+
+## 48) Troubleshooting: duplicate job is not started
 
 Likely cause:
 
-* Active lock is working.
+```text
+active lock is working
+```
 
-If this is intended, use a different lock key or pass `null` when parallel jobs are allowed.
+If parallel jobs are valid:
 
-### Cancellation request does not stop the job quickly
+```text
+use null lock key
+```
+
+If one active instance is intended:
+
+```text
+keep the lock key
+```
+
+Both token and trusted enqueue paths share the same active-lock semantics.
+
+---
+
+## 49) Troubleshooting: cancellation is slow
 
 Likely cause:
 
-* Handler does not call `isCancellationRequested()` between bounded work units.
+```text
+handler does not check isCancellationRequested() frequently enough
+```
 
-Fix handler structure. Cancellation is cooperative.
+Cancellation is cooperative.
 
-### Status polling repeats or skips logs
+Split long workflows into bounded units and check between them.
 
-Use `last_log_seq` exactly as returned.
+---
 
-Correct:
+## 50) Troubleshooting: logs repeat or skip
+
+Use:
 
 ```text
 next afterSeq = last_log_seq
 ```
 
-Incorrect:
+Do not add one manually.
+
+The repository already uses:
 
 ```text
-next afterSeq = last_log_seq + 1
+seq > afterSeq
 ```
-
-`fetchLogsAfterSeq()` already uses `seq > afterSeq`.
 
 ---
 
-## 24) Layer boundaries
+## 51) Layer boundaries
 
 ### Controllers
 
-Controllers own HTTP transport:
+Own:
 
-* Input parsing.
-* CSRF.
-* Auth checks.
-* JSON responses.
-* Redirects.
-* Templates.
+- HTTP parsing.
+- CSRF.
+- Authentication.
+- Authorization.
+- Response shaping.
+- Redirects.
+- Templates.
 
-Controllers may call:
+May call:
 
 ```php
 new StartJob($this->app);
+new EnqueueTrustedJob($this->app);
 new GetJobStatus($this->app);
 new CancelJob($this->app);
 ```
 
 ### Commands
 
-Commands own CLI transport:
+Own:
 
-* Arguments.
-* Options.
-* Terminal output.
-* Exit codes.
+- CLI arguments.
+- CLI options.
+- Output.
+- Exit codes.
 
-Commands may call the same operations.
+May call the same application-facing operations.
 
 ### Operations
 
-Operations own transport-agnostic decision graphs.
+Own transport-independent orchestration.
 
-They are instantiated explicitly and are not services.
+Examples:
+
+```text
+StartJob
+EnqueueTrustedJob
+GetJobStatus
+CancelJob
+WorkTrustedQueue
+RunQueuedJob
+RunTrustedJob
+ExecuteRunningJob
+```
 
 ### Repositories
 
-Repositories own SQL and persistence.
+Own all SQL and persistence.
 
-No SQL belongs in controllers, commands, operations, services, or handlers.
+### Services
+
+Own reusable App-aware tools.
+
+Examples:
+
+```text
+jobLogger
+jobRegistry
+jobLauncher
+```
 
 ### Handlers
 
-Handlers own domain-specific workflow execution.
-
-Handlers use `JobContext` for job state, logs, steps, heartbeat, and cancellation checks.
+Own domain-specific long-running workflow logic.
 
 ---
 
-## 25) Minimal implementation checklist
-
-For a new job type:
+## 52) Minimal checklist for a new token/push job type
 
 1. Pick a namespaced job type.
-2. Write a handler implementing `JobHandlerInterface`.
-3. Register the handler in `jobrunner.handlers`.
-4. Start jobs through `StartJob`.
-5. Pass only validated payload.
-6. Use a lock key when duplicate active jobs should be prevented.
-7. Poll status through `GetJobStatus`.
-8. Request cancellation through `CancelJob`.
+2. Write a no-argument handler implementing `JobHandlerInterface`.
+3. Register it under `jobrunner.handlers`.
+4. Define a narrow payload contract.
+5. Choose a lock key if duplicate active jobs should be blocked.
+6. Start through `StartJob`.
+7. Poll through `GetJobStatus`.
+8. Cancel through `CancelJob`.
 9. Check cancellation inside the handler.
-10. Keep SQL in repositories.
-11. Keep HTTP/CLI formatting in adapters.
-
-Example job type:
-
-```text
-devkit.create_app
-```
-
-Example handler:
-
-```text
-App\JobRunner\CreateAppJobHandler
-```
-
-Example operations:
-
-```php
-$start = (new \CitOmni\JobRunner\Operation\StartJob($this->app))->execute(...);
-$status = (new \CitOmni\JobRunner\Operation\GetJobStatus($this->app))->execute($jobId, $afterSeq, 200);
-$cancel = (new \CitOmni\JobRunner\Operation\CancelJob($this->app))->execute($jobId);
-```
+10. Keep secrets out of payload/result/logs.
+11. Keep SQL in repositories.
+12. Keep transport formatting in adapters.
 
 ---
 
-## 26) Practical V1 contract
+## 53) Minimal checklist for a new trusted/pull job type
 
-A consumer app can now build a practical UI around three operations:
+1. Pick a namespaced job type.
+2. Write a no-argument handler implementing `JobHandlerInterface`.
+3. Register it under `jobrunner.handlers`.
+4. Define a narrow intent-based payload.
+5. Choose a lock key if duplicate active jobs should be blocked.
+6. Ensure one trusted `job:work` supervisor is running.
+7. Run the supervisor under the intended execution environment.
+8. Enqueue through `EnqueueTrustedJob`.
+9. Poll through `GetJobStatus`.
+10. Cancel through `CancelJob`.
+11. Keep secrets out of JobRunner persistence.
+12. Let the handler resolve authoritative privileged details internally.
+13. Do not manually launch `job:run-trusted`.
+14. Do not mark rows `running` yourself.
+
+---
+
+## 54) Practical consumer API
+
+The main consumer-facing JobRunner operations are:
 
 ```text
-StartJob       -> start a registered job
-GetJobStatus   -> read progress, logs, result, and errors
-CancelJob      -> request cooperative cancellation
+StartJob
+  -> enqueue and immediately launch TOKEN-mode job
+
+EnqueueTrustedJob
+  -> enqueue TRUSTED-mode job for job:work
+
+GetJobStatus
+  -> read status, progress, logs, result, and errors
+
+CancelJob
+  -> cancel queued work or request cooperative cancellation
 ```
 
-That is the stable V1 foundation for flows such as DevKit Create App.
-
-The next layer belongs outside `citomni/jobrunner`:
+Operationally, trusted/pull additionally requires:
 
 ```text
-DevKit UI / Controller
+job:work
+```
+
+running in the execution environment intended for trusted jobs.
+
+Internal worker commands are:
+
+```text
+job:run
+job:run-trusted
+```
+
+Application code normally does not invoke those directly.
+
+---
+
+## 55) Practical runtime summary
+
+### Token/push
+
+```text
+Producer
   -> StartJob
-  -> GetJobStatus
-  -> CancelJob
+  -> queued TOKEN row
+  -> detached fresh child
+  -> token claim
+  -> ExecuteRunningJob
+  -> terminal state
 ```
 
-JobRunner should stay small, boring, and reliable.
+### Trusted/pull
 
-Boring is easier to debug at 23:41.
+```text
+Producer
+  -> EnqueueTrustedJob
+  -> queued TRUSTED row
+
+Persistent supervisor
+  -> find oldest trusted queued row
+  -> prepare ephemeral handoff
+  -> start fresh trusted child synchronously
+
+Trusted child
+  -> trusted claim
+  -> ExecuteRunningJob
+  -> terminal state
+
+Supervisor
+  -> immediately check next job
+  -> sleep only when queue is empty
+```
+
+Both modes preserve the same handler contract, status model, logging model, progress model, cancellation model, and terminal persistence semantics.
+
+That is the practical contract consumer applications should build on.
