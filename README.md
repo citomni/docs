@@ -11,6 +11,7 @@ This repository hosts the public documentation for the CitOmni Framework.
 - [concepts/admin-url-structure-http.md](./concepts/admin-url-structure-http.md)
 - [concepts/architecture.md](./concepts/architecture.md)
 - [concepts/database-service.md](./concepts/database-service.md)
+- [concepts/JobRunner-execution-ownership.md](./concepts/JobRunner-execution-ownership.md)
 - [concepts/maintenance-mode.md](./concepts/maintenance-mode.md)
 - [concepts/maintenance-mode_dk.md](./concepts/maintenance-mode_dk.md)
 - [concepts/routing-layer-http-runtime.md](./concepts/routing-layer-http-runtime.md)
@@ -153,4 +154,4 @@ Below is the planned layout. Some sections may be empty while we migrate content
 
 ---
 _This README was generated automatically._  
-_Last updated: 2026-06-14 18:41:21_
+_Last updated: 2026-09-02 13:50:40_
