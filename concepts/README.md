@@ -21,6 +21,7 @@ They describe how the framework is intended to work and why particular patterns,
 - [Admin url structure http](./admin-url-structure-http.md)
 - [Architecture](./architecture.md)
 - [Database service](./database-service.md)
+- [JobRunner execution ownership](./JobRunner-execution-ownership.md)
 - [Maintenance mode](./maintenance-mode.md)
 - [Maintenance mode dk](./maintenance-mode_dk.md)
 - [Routing layer http runtime](./routing-layer-http-runtime.md)
