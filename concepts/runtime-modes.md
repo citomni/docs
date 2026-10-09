@@ -1,518 +1,476 @@
-# Runtime Modes - CitOmni Application Kernel (v1.0)
-*A deterministic execution model for multi-context application lifecycles.*
+# Runtime Modes - CitOmni Application Kernel
+
+*How one CitOmni application boots, configures, and dispatches in HTTP and in CLI.*
 
 ---
 
-**Document type:** Technical Architecture  
-**Version:** 1.0  
-**Applies to:** CitOmni ≥ 8.2  
-**Audience:** Framework developers, provider authors, and integrators  
-**Status:** Stable and foundational  
-**Author:** CitOmni Core Team  
-**Copyright:** © 2012-present CitOmni
+## Document metadata
+
+* **Packages:** `citomni/kernel`, `citomni/http`, `citomni/cli`
+* **Key types:** `CitOmni\Kernel\Mode`, `CitOmni\Kernel\App`, `CitOmni\Http\Kernel`, `CitOmni\Cli\Kernel`
+* **PHP version:** >= 8.5
+* **Audience:** Framework developers, provider authors, and integrators
+* **Status:** Stable
+* **Document type:** Technical architecture
 
 ---
 
 ## 1. Introduction
 
-CitOmni's architecture distinguishes between *runtime modes* - discrete execution contexts that define how an application is bootstrapped, configured, and executed.
-Each mode represents a self-contained environment with deterministic baseline configuration, service mapping, and lifecycle semantics.
+A **runtime mode** is the execution context an `App` instance is built for. CitOmni has two:
 
-At present, two modes exist and are considered exhaustive for the PHP ecosystem:
+* **HTTP mode:** A web request, handled by the front controller `public/index.php`.
+* **CLI mode:** A command, run as a PHP process through `bin/citomni`.
 
-* **HTTP Mode:** For all web-facing, request/response workloads.
-* **CLI Mode:** For command-line, daemon, job, and automation workloads.
+The mode decides which mode package supplies the baseline, which application files take part in the merge, which dispatch map is built (routes or commands), which services exist, which error handler is installed, and which cache files are read and written.
 
-This document describes the rationale, structure, and operational implications of the mode layer, as implemented in `citomni/kernel` and its two canonical mode packages: `citomni/http` and `citomni/cli`.
+An application is not an HTTP app or a CLI app. One app root with one `/config` directory normally runs in both modes, through its two entry points. Each `App` instance has exactly one mode, fixed at construction. One process may hold `App` instances of both modes; `cache:warm` builds the HTTP caches from the CLI that way.
 
----
-
-## 2. Conceptual Overview
-
-### 2.1 Definition
-
-A **runtime mode** (sometimes referred to as an *execution mode*) defines a top-level *delivery environment* in which a CitOmni application operates.
-It establishes:
-
-1. The **entry point** (e.g., `public/index.php` vs. `bin/console`),
-2. The **baseline configuration** (vendor defaults),
-3. The **service map** (core components), and
-4. The **I/O semantics** (request-response vs. stdin-stdout).
-
-The runtime mode is not merely a technical distinction; it is a foundational partitioning of the application universe.
-Every CitOmni app exists in exactly one mode at a time.
-
-### 2.2 Philosophical Intent
-
-CitOmni pursues *deterministic simplicity*: predictable behavior, minimal indirection, and zero "magic" resolution.
-The runtime mode layer embodies that philosophy by defining *hard boundaries* between operational domains.
-
-Rather than letting arbitrary "contexts" evolve dynamically, CitOmni anchors them to two static, compile-time constants:
-
-```php
-\CitOmni\Kernel\Mode::HTTP
-\CitOmni\Kernel\Mode::CLI
-```
-
-These are not interchangeable; each boot pipeline, configuration tree, and service map is mode-specific.
+This document describes the mode layer as implemented in `citomni/kernel` and the two mode packages, `citomni/http` and `citomni/cli`.
 
 ---
 
-## 3. Structural Overview
-
-### 3.1 Mode Enum
+## 2. The `Mode` enum
 
 ```php
-enum \CitOmni\Kernel\Mode: string {
+namespace CitOmni\Kernel;
+
+enum Mode: string {
 	case HTTP = 'http';
 	case CLI  = 'cli';
 }
 ```
 
-The `Mode` enum ensures strict typing throughout the kernel.
-It is passed into the `App` constructor and dictates the resolution of baseline configuration and service mapping.
+The mode is passed to the `App` constructor and cannot change afterwards:
 
 ```php
-$app = new \CitOmni\Kernel\App($configDir, \CitOmni\Kernel\Mode::HTTP);
+$app = new \CitOmni\Kernel\App(CITOMNI_APP_PATH . '/config', \CitOmni\Kernel\Mode::CLI);
 ```
 
-### 3.2 Baseline Ownership
-
-Each mode has a **baseline package** that owns and defines its initial state:
-
-| Mode | Baseline Package | Baseline Constants                                                                 | Description                                 |
-| ---- | ---------------- | ----------------------------------------------------------------------------------- | ------------------------------------------- |
-| HTTP | `citomni/http`   | `\CitOmni\Http\Boot\Config::CFG`, `\CitOmni\Http\Boot\Services::MAP`, `\CitOmni\Http\Boot\Routes::MAP_HTTP` | Default configuration, services, and routes for HTTP. |
-| CLI  | `citomni/cli`    | `\CitOmni\Cli\Boot\Config::CFG`,  `\CitOmni\Cli\Boot\Services::MAP`,  `\CitOmni\Cli\Boot\Routes::MAP_CLI`  | Default configuration, services, and routes for CLI.  |
-
-
-Baseline configuration is immutable vendor data - a static array exported as a constant.
-It forms the root node for all further configuration merges.
+* **The entry point chooses the mode.** `\CitOmni\Http\Kernel` constructs its `App` with `Mode::HTTP`, and `\CitOmni\Cli\Kernel` with `Mode::CLI`. Neither `App` nor the two kernels derive the mode from `PHP_SAPI`. PHP's built-in development server (`php -S`, SAPI `cli-server`) runs `public/index.php` in HTTP mode, and a CLI process can construct an `App` in `Mode::HTTP`.
+* **`App` does not expose its mode.** The mode is a private property without an accessor. Code that must behave differently per mode is registered per mode (`MAP_HTTP`, `MAP_CLI`, `ROUTES_HTTP`, `COMMANDS_CLI`) or checks a capability such as `$app->hasService('request')` (Section 7).
+* **Each mode needs its own mode package.** `Mode::HTTP` reads `\CitOmni\Http\Boot\Registry`, and `Mode::CLI` reads `\CitOmni\Cli\Boot\Registry`. Neither mode references the other package, so an application may install only `citomni/http` or only `citomni/cli`.
 
 ---
 
-## 4. Mode Boot Sequence
+## 3. What a mode determines
 
-### 4.1 Deterministic Merge Pipeline
+| Aspect | HTTP mode | CLI mode |
+| --- | --- | --- |
+| Entry point | `public/index.php` | `bin/citomni` |
+| Kernel call | `\CitOmni\Http\Kernel::run(__DIR__)` | `\CitOmni\Cli\Kernel::run(CITOMNI_APP_PATH . '/config', $_SERVER['argv'] ?? [])` |
+| Mode package | `citomni/http` | `citomni/cli` |
+| Baseline class | `\CitOmni\Http\Boot\Registry` | `\CitOmni\Cli\Boot\Registry` |
+| Baseline constants | `CFG_HTTP`, `MAP_HTTP`, `ROUTES_HTTP` | `CFG_CLI`, `MAP_CLI`, `COMMANDS_CLI` |
+| App config files of the mode | `citomni_http_cfg.php`, `citomni_http_cfg.{ENV}.php` | `citomni_cli_cfg.php`, `citomni_cli_cfg.{ENV}.php` |
+| App service file of the mode | `services_http.php` | `services_cli.php` |
+| Dispatch map | `$app->routes`, keyed by path, with regex routes under `regex` | `$app->commands`, keyed by command name |
+| App dispatch files | `citomni_http_routes.php`, `citomni_http_routes.{ENV}.php` | `citomni_cli_commands.php`, `citomni_cli_commands.{ENV}.php` |
+| Map of the other mode | `$app->commands` is `[]` | `$app->routes` is `[]` |
+| Dispatcher service | `router` (`CitOmni\Http\Service\Router`) | `runner` (`CitOmni\Cli\Service\Runner`) |
+| Adapter base class | `CitOmni\Kernel\Controller\BaseController` | `CitOmni\Kernel\Command\BaseCommand` |
+| Error handler (`errorHandler`) | `CitOmni\Http\Service\ErrorHandler` | `CitOmni\Cli\Service\ErrorHandler` |
+| Failure output | Error page or JSON response; the request ends with `exit(0)` | Plain text on STDERR; the process ends with `exit(1)` |
+| Error logs | `http_err_*.jsonl`, `http_router_*.jsonl`, `http_request.jsonl` | `cli_err_*.jsonl` |
+| PHP intl extension | Required; boot throws without it | Optional; the ICU locale is set when intl is loaded |
+| Cache files | `var/cache/cfg.http.php`, `var/cache/routes.http.php`, `var/cache/services.http.php` | `var/cache/cfg.cli.php`, `var/cache/commands.cli.php`, `var/cache/services.cli.php` |
 
-When an `App` instance is created, it deterministically constructs **three** layered structures:
+The log directory is `error_handler.log.path`. The HTTP baseline sets it to `var/logs`; the CLI baseline leaves it empty, which the CLI handler reads as `var/logs`. Exceptions, PHP errors, and shutdown fatals go to the `*_err_*.jsonl` files of each mode. In HTTP, errors raised through `httpError()` go to `http_router_404.jsonl`, `http_router_405.jsonl`, `http_router_5xx.jsonl`, or `http_router_other.jsonl`, and request rejections such as the 413 of Section 4.2 go to `http_request.jsonl`.
 
-* **Configuration tree** (`Cfg`) - merged associative arrays with "last-wins" semantics
-* **Routes table** (`$app->routes`) - deterministic HTTP/CLI routing map
-* **Service map** (`$app->services`) - associative IDs mapped to FQCNs
+Shared by both modes:
 
-The merge pipeline is identical for both HTTP and CLI modes, differing only in baseline sources and constant names.
+* `App`, `Cfg`, `Arr`, `Runtime`, and the base classes of `citomni/kernel`.
+* The common app files `providers.php`, `citomni_cfg.php`, `citomni_cfg.{ENV}.php`, and `services.php`.
+* The provider constants `CFG_COMMON` and `MAP_COMMON`.
+* Operations, repositories, services, and support classes that do not depend on the services of one mode (Section 7).
 
-#### 4.1.1 Configuration Merge Order
+---
 
-| Layer | Source                                                                    | Purpose                                                    |
-| ----- | ------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| (1)   | Vendor baseline (`citomni/http` or `citomni/cli`)                         | Core defaults, mode-specific.                              |
-| (2)   | Providers (from `/config/providers.php`)                                  | Feature overlays; each may define `CFG_HTTP` or `CFG_CLI`. |
-| (3)   | App base config (`/config/citomni_http_cfg.php` or `citomni_cli_cfg.php`) | Project-specific defaults.                                 |
-| (4)   | Environment overlay (`citomni_http_cfg.{ENV}.php`)                        | Environment-specific modifications.                        |
+## 4. Entry points and boot sequences
 
-Result: a deep associative array representing the merged, read-only runtime configuration, exposed as `$app->cfg`.
+### 4.1 Entry-point constants
 
-#### 4.1.2 Service Map Merge Order
+The entry point defines a few constants before it hands over to a kernel. `App` and the mode packages read them; only `CITOMNI_PUBLIC_ROOT_URL` can also be defined by a kernel.
 
-| Layer | Source                                            | Constant(s)             |
-| ----- | ------------------------------------------------- | ----------------------- |
-| (1)   | Vendor baseline (`citomni/http` or `citomni/cli`) | `Boot\Services::MAP`    |
-| (2)   | Providers                                         | `MAP_HTTP` or `MAP_CLI` |
-| (3)   | Application overrides (`/config/services.php`)    | -                       |
+| Constant | Defined by | Purpose |
+| --- | --- | --- |
+| `CITOMNI_APP_PATH` | Both entry points; required | App root. `App` derives its cache paths and `getAppRoot()` from it. |
+| `CITOMNI_ENVIRONMENT` | Both entry points | Selects the `{ENV}` overlays (Section 5). When it is not defined, `App` uses `prod`. |
+| `CITOMNI_PUBLIC_PATH` | `public/index.php`; the scaffolded `bin/citomni` as well | Absolute path to `/public`, read by services such as `upload` and by shared code. |
+| `CITOMNI_PUBLIC_ROOT_URL` | The entry point, or the HTTP kernel | Absolute public base URL without a trailing slash. In HTTP mode the kernel defines it when the entry point did not (Section 4.2, step 2.6). In CLI mode only the entry point defines it. The scaffolded `bin/citomni` defines the placeholder `https://www.example.com` outside `dev`; replace it with the real URL. |
+| `CITOMNI_START_NS` | Both entry points; optional | `hrtime(true)` at entry. The HTTP `?_perf` footer measures from it. |
 
-Result: an associative array of service IDs resolved at runtime via `$app->__get()`.
+Each entry point defines its own `CITOMNI_ENVIRONMENT`. Nothing keeps `public/index.php` and `bin/citomni` in step; Section 6.4 shows where a mismatch hurts.
 
-#### 4.1.3 Route Map Merge Order
+### 4.2 HTTP boot
 
-| Layer | Source | Constant(s) / File | Purpose |
-|-------|---------|-------------------|----------|
-| (1) | Vendor baseline | `\CitOmni\Http\Boot\Routes::MAP_HTTP` or `\CitOmni\Cli\Boot\Routes::MAP_CLI` | Core system routes |
-| (2) | Providers | `ROUTES_HTTP` / `ROUTES_CLI` | Provider-level routes (from `/config/providers.php`) |
-| (3) | Application base | `/config/citomni_{http or cli}_routes.php` | Project-specific routes |
-| (4) | Environment overlay | `/config/citomni_{http or cli}_routes.{ENV}.php` | Environment-specific overrides |
-
-The merge follows the global *last-wins* rule and is implemented in  
-`App::buildRoutes()`.  
-The resulting array is cached under  
-`/var/cache/routes.{HTTP or CLI}.php` for zero-I/O runtime lookups.
-
-
-### 4.2 Mode-specific Constants
-
-CitOmni uses *constant arrays* for configuration and service definitions rather than runtime evaluation.
-This design eliminates boot-time code execution and achieves **zero I/O**, **zero reflection**, and **O(1)** merge determinism.
-
-Providers must therefore expose static constants:
+`public/index.php`, as scaffolded for production, without its comments and with an example URL:
 
 ```php
-public const CFG_HTTP = [ /* overlay config */ ];
-public const CFG_CLI  = [ /* overlay config */ ];
+<?php
+declare(strict_types=1);
 
-public const MAP_HTTP = [ /* service ids -> classes */ ];
-public const MAP_CLI  = [ /* service ids -> classes */ ];
+define('CITOMNI_START_NS', hrtime(true));
+define('CITOMNI_ENVIRONMENT', 'prod');
+define('CITOMNI_PUBLIC_PATH', __DIR__);
+define('CITOMNI_APP_PATH', \dirname(__DIR__));
+define('CITOMNI_PUBLIC_ROOT_URL', 'https://www.example.com');
 
-public const ROUTES_HTTP = [ /* route definitions */ ];
-public const ROUTES_CLI  = [ /* CLI routing (if used) */ ];
+require __DIR__ . '/../vendor/autoload.php';
+
+\CitOmni\Http\Kernel::run(__DIR__);
 ```
 
-These are read directly by `App::buildConfig()`, `App::buildRoutes()`, and `App::buildServices()`.
+`\CitOmni\Http\Kernel::run(string $entryPath, array $opts = []): void` accepts the `public/` directory, the `config/` directory, or the app root. `$opts` is reserved and unused.
 
----
+1. Start one top-level output buffer with implicit flush off, so the error handler can replace a partial response.
+2. `Kernel::boot()`:
+   1. Resolve the app root, the config directory, and the public path from the entry path.
+   2. `new App($configDir, Mode::HTTP)`: Load cfg, routes, and services from the caches, or build them (Sections 5 and 6).
+   3. `$app->errorHandler->install()`.
+   4. `Runtime::configure($app->cfg)`: Timezone (`locale.timezone`, default `UTC`), default charset (`locale.charset`, default `UTF-8`), and ICU locale (`locale.icu_locale`, default `en_US`, only when intl is loaded).
+   5. Throw `\RuntimeException` when the intl extension is missing.
+   6. Define `CITOMNI_PUBLIC_ROOT_URL` when the entry point did not. In `dev` it is an absolute `http.base_url` or detected from the request. In every other environment an absolute `http.base_url` is required, and boot throws without one.
+   7. Pass `http.trusted_proxies` to the `request` service when it is an array.
+3. Reject a POST whose declared `Content-Length` exceeds `post_max_size` with status 413, through `errorHandler->httpError()`.
+4. `$app->maintenance->guard()`.
+5. `$app->router->run()`. Status 404 and 405 go through the error handler.
+6. With `?_perf` in the query string, append an HTML comment with elapsed time, memory, and included-file count. Outside `prod` it also lists the included files.
 
-## 5. Why Only Two Modes?
+### 4.3 CLI boot
 
-### 5.1 Theoretical Completeness
-
-PHP applications fundamentally execute in one of two paradigms:
-
-| Paradigm         | Mode | Primary I/O model                                          |
-| ---------------- | ---- | ---------------------------------------------------------- |
-| Request-Response | HTTP | Environment variables, streams, $_SERVER, $_POST, headers. |
-| Command-Stream   | CLI  | STDIN/STDOUT, argv, exit codes.                            |
-
-All conceivable use cases (APIs, websites, daemons, workers, cronjobs, queues, serverless functions, etc.) fit naturally into one of these.
-
-### 5.2 Exhaustiveness Justification
-
-#### a) **HTTP mode covers:**
-
-* Traditional web servers (Apache, Nginx, Caddy)
-* FastCGI (PHP-FPM)
-* REST, GraphQL, gRPC (over HTTP/2)
-* Serverless environments (Lambda, Cloud Functions)
-* Long-polling, WebSocket upgrades
-* Reverse proxies and application gateways
-
-#### b) **CLI mode covers:**
-
-* Maintenance commands
-* Scheduled tasks (cron)
-* Build tools
-* Import/export utilities
-* Queue consumers and daemons
-* Deployment orchestration
-* CI/CD runners
-
-Together, they exhaust PHP's operational universe.
-
-### 5.3 Why Not Add a Third Mode?
-
-Creating additional modes would violate CitOmni's **deterministic minimalism** and yield negligible functional gain.
-
-A hypothetical "third mode" would require:
-
-1. A new kind of entrypoint (not web, not shell),
-2. A non-HTTP, non-CLI I/O model,
-3. Distinct configuration semantics not expressible through providers.
-
-Such an environment does not exist for PHP.
-All other workloads can be represented as either:
-
-* A **provider overlay** inside existing modes, or
-* A **sub-system** (e.g., `citomni/queue`, `citomni/worker`) built on top of CLI.
-
-### 5.4 Empirical Rationale
-
-Empirically, PHP's entire ecosystem - from Laravel, Symfony, and Slim to custom CMSes - converges on the same dichotomy: *HTTP and CLI*.
-CitOmni formalizes that dichotomy as a first-class construct rather than an afterthought.
-
----
-
-## 6. Composition of a Mode Package
-
-Every runtime mode in CitOmni (HTTP or CLI) is represented by a **mode package**.  
-A mode package provides the baseline definitions that establish its configuration, routing, and service topology.  
-Together, these constants form the immutable foundation upon which all provider overlays and application-level overrides are merged.
-
-### 6.1 Mandatory Baseline Files
-
-| File                    | Purpose                                                                 |
-| ----------------------- | ----------------------------------------------------------------------- |
-| `src/Boot/Config.php`   | Defines the baseline configuration constant `CFG`.                      |
-| `src/Boot/Services.php` | Defines the baseline service map constant `MAP`.                        |
-| `src/Boot/Routes.php`   | Defines the baseline route map (`MAP_HTTP` for HTTP, `MAP_CLI` for CLI). |
-
-Each of these files must expose a single **static constant** returning a normalized PHP array.  
-The kernel never executes code within these classes-only reads the constant values at boot time.
-
-Example (simplified from `citomni/http`):
+`bin/citomni`, as scaffolded without its comments:
 
 ```php
-namespace CitOmni\Http\Boot;
+<?php
+declare(strict_types=1);
 
-final class Config {
-	public const CFG = [
-		'identity' => [
-			'package' => 'citomni/http',
-			'mode'    => 'http',
-		],
-		'http' => [
-			'base_url' => '',
-			// ...
-		],
-	];
+define('CITOMNI_START_NS', hrtime(true));
+define('CITOMNI_ENVIRONMENT', 'dev');
+define('CITOMNI_PUBLIC_PATH', \dirname(__DIR__) . '/public');
+define('CITOMNI_APP_PATH', \dirname(__DIR__));
+
+if (\defined('CITOMNI_ENVIRONMENT') && \CITOMNI_ENVIRONMENT !== 'dev') {
+	define('CITOMNI_PUBLIC_ROOT_URL', 'https://www.example.com');
 }
 
-final class Services {
-	public const MAP = [
-		'router'   => \CitOmni\Http\Router::class,
-		'request'  => \CitOmni\Http\Request::class,
-		'response' => \CitOmni\Http\Response::class,
-		'errorHandler' => \CitOmni\Http\Service\ErrorHandler::class,
-		// ...
-	];
-}
+require CITOMNI_APP_PATH . '/vendor/autoload.php';
 
-final class Routes {
-	public const MAP_HTTP = [
-		'/maintenance.html' => [
-			'controller'    => \CitOmni\Http\Controller\MaintenanceController::class,
-			'action'        => 'view',
-			'methods'       => ['GET'],
-			'template_file' => 'public/maintenance.html',
-			'template_layer'=> 'citomni/http',
-		],
-	];
-}
+\CitOmni\Cli\Kernel::run(CITOMNI_APP_PATH . '/config', $_SERVER['argv'] ?? []);
 ```
 
-These baseline maps together define the **minimum viable runtime** for the given mode.
-All further additions-providers, extensions, or applications-layer deterministically on top of them.
+Run it as `php bin/citomni <command>`. `\CitOmni\Cli\Kernel::run(string $configDir, array $argv): never` takes the config directory explicitly; there is no path resolution as in HTTP.
+
+1. `Kernel::boot()`:
+   1. `new App($configDir, Mode::CLI)`: Load cfg, commands, and services from the caches, or build them.
+   2. `Runtime::configure($app->cfg)`, as in HTTP.
+   3. `$app->errorHandler->install()`, when an `errorHandler` service is registered.
+2. `$app->runner->run($argv)`. `$argv[1]` names the command. Without a command, or with `list`, the runner prints the command list and returns 0. An unknown command writes to STDERR and returns 2.
+3. `exit()` with the returned code: `0` for success, `1` for failure, `2` for a usage error (`BaseCommand::SUCCESS`, `FAILURE`, and `USAGE`). Uncaught exceptions and fatal errors end the process with `1` through the CLI error handler.
+
+The CLI boot has no output buffering, no maintenance guard, no public URL resolution, no trusted proxies, and no intl requirement.
+
+Two details of the order matter when boot fails:
+
+* In both modes, the error handler is a service of the `App`, so a failure while the `App` is constructed (for example a malformed `providers.php`) happens before any error handler is installed.
+* The CLI boot calls `Runtime::configure()` before it installs the error handler; HTTP does the reverse. An exception from `Runtime::configure()`, such as an invalid `locale.timezone`, therefore ends a CLI boot as an uncaught PHP error with exit code 255, and nothing is written to the CLI error log.
+
+### 4.4 Booting without dispatch
+
+Both kernels expose the boot step on its own:
+
+* `\CitOmni\Http\Kernel::boot(string $entryPath, array $opts = []): App` runs step 2 of Section 4.2.
+* `\CitOmni\Cli\Kernel::boot(string $configDir): App` runs step 1 of Section 4.3.
+
+Both change process-wide state: They apply `Runtime::configure()` and install a global error handler, and the HTTP boot defines `CITOMNI_PUBLIC_ROOT_URL`. `new App($configDir, $mode)` does none of this. It only loads or builds cfg, the dispatch map, and the services, which is what tests, scripts, and cache tooling usually need.
 
 ---
 
-### 6.2 Provider-Level Contributions
+## 5. How `App` assembles a mode
 
-Providers do **not** own `Boot/Config.php`, `Boot/Services.php`, or `Boot/Routes.php`.
-Instead, they contribute overlays via a lightweight composite class:
+`App` holds three artifacts. Each one is loaded from its cache file when present (Section 6) and otherwise built from the sources below.
 
-| File                    | Purpose                                                                                |
-| ----------------------- | -------------------------------------------------------------------------------------- |
-| `src/Boot/Registry.php` | Exposes provider-specific overlays for configuration, services, and routes (optional). |
+| Artifact | Exposed as | Merge rule | Environment overlay |
+| --- | --- | --- | --- |
+| Configuration | `$app->cfg`, a read-only `Cfg` | Deep associative merge, last wins | Yes |
+| Dispatch map | `$app->routes` (HTTP) or `$app->commands` (CLI) | Deep associative merge, last wins | Yes |
+| Service map | `$app->{id}`, lazy singletons | PHP array union per service id, later source wins | No |
 
-A provider's `Registry` may define any combination of these constants:
+### 5.1 Application files
 
-| Constant                     | Scope    | Purpose                                |
-| ---------------------------- | -------- | -------------------------------------- |
-| `CFG_HTTP` / `CFG_CLI`       | Config   | Adds or overrides configuration keys.  |
-| `MAP_HTTP` / `MAP_CLI`       | Services | Adds or overrides service definitions. |
-| `ROUTES_HTTP` / `ROUTES_CLI` | Routes   | Adds or overrides routing entries.     |
+| File in `/config` | Read in | Scaffold source |
+| --- | --- | --- |
+| `providers.php` | Both modes | `citomni/kernel` |
+| `citomni_cfg.php`, `citomni_cfg.{ENV}.php` | Both modes | `citomni/kernel` |
+| `services.php` | Both modes | `citomni/kernel` |
+| `citomni_http_cfg.php`, `citomni_http_cfg.{ENV}.php` | HTTP | `citomni/http` |
+| `citomni_http_routes.php`, `citomni_http_routes.{ENV}.php` | HTTP | `citomni/http` |
+| `services_http.php` | HTTP | `citomni/http` |
+| `citomni_cli_cfg.php`, `citomni_cli_cfg.{ENV}.php` | CLI | `citomni/cli` |
+| `citomni_cli_commands.php`, `citomni_cli_commands.{ENV}.php` | CLI | `citomni/cli` |
+| `services_cli.php` | CLI | `citomni/cli` |
 
-Example (simplified provider overlay):
+`{ENV}` is the value of `CITOMNI_ENVIRONMENT`, or `prod` when it is not defined. The kernel does not validate the value. The scaffolds, installed by `citomni/installer`, create `dev`, `stage`, and `prod` variants.
+
+Every file is optional at runtime, and a missing file is skipped. A file that exists must return the expected type. Configuration files return an array, an object, or a `Traversable`; `providers.php`, dispatch files, and service files return an array. Anything else throws `\RuntimeException`.
+
+### 5.2 Configuration
+
+Sources in merge order. Later sources win.
+
+| Step | Source | HTTP | CLI |
+| --- | --- | --- | --- |
+| 1 | Mode baseline | `\CitOmni\Http\Boot\Registry::CFG_HTTP` | `\CitOmni\Cli\Boot\Registry::CFG_CLI` |
+| 2 | Each provider, in `providers.php` order | `CFG_COMMON`, then `CFG_HTTP` | `CFG_COMMON`, then `CFG_CLI` |
+| 3 | App common base | `citomni_cfg.php` | `citomni_cfg.php` |
+| 4 | App mode base | `citomni_http_cfg.php` | `citomni_cli_cfg.php` |
+| 5 | App common environment overlay | `citomni_cfg.{ENV}.php` | `citomni_cfg.{ENV}.php` |
+| 6 | App mode environment overlay | `citomni_http_cfg.{ENV}.php` | `citomni_cli_cfg.{ENV}.php` |
+
+Merge rules of `Arr::mergeAssocLastWins()`:
+
+* Associative arrays merge recursively, key by key.
+* Lists are replaced as a whole and never concatenated.
+* Empty values (`''`, `0`, `false`, `null`, `[]`) are valid overrides and win.
+* Every source passes through `Arr::normalizeConfig()` first. Objects and `Traversable`s become arrays; enum cases stay enum cases.
+
+`$app->cfg` is read-only. Direct access to a missing key throws `\OutOfBoundsException`, and `??` short-circuits through nested nodes:
 
 ```php
-namespace CitOmni\Auth\Boot;
+$timezone = (string)($this->app->cfg->locale->timezone ?? 'UTC');
+```
+
+### 5.3 Dispatch maps
+
+HTTP dispatches routes; CLI dispatches commands. There is no shared dispatch constant: No `ROUTES_COMMON`, no `COMMANDS_COMMON`, and no `ROUTES_CLI`.
+
+| Step | Source | HTTP routes | CLI commands |
+| --- | --- | --- | --- |
+| 1 | Mode baseline | `\CitOmni\Http\Boot\Registry::ROUTES_HTTP` | `\CitOmni\Cli\Boot\Registry::COMMANDS_CLI` |
+| 2 | Each provider, in `providers.php` order | `ROUTES_HTTP` | `COMMANDS_CLI` |
+| 3 | App base | `citomni_http_routes.php` | `citomni_cli_commands.php` |
+| 4 | App environment overlay | `citomni_http_routes.{ENV}.php` | `citomni_cli_commands.{ENV}.php` |
+
+Dispatch maps use the merge of Section 5.2, so an override merges into the entry it overrides:
+
+* A later entry with the same path or command name merges into the earlier entry, and keys it omits survive. A provider that sets only `controller` and `action` for `/` keeps the `methods`, `template_file`, and `template_layer` of the `citomni/http` route; an app that sets only `command` for `cache:warm` keeps the `description` of the `citomni/cli` command.
+* Lists such as `methods` are replaced.
+* A whole source that returns `[]` is skipped and never wipes earlier entries.
+* Inside a source, `[]` is an ordinary override and replaces what was merged before it. `'regex' => []` in an app routes file drops every regex route merged before it, including those of providers.
+* A provider constant or app file that is not an array throws `\RuntimeException`.
+
+The map of the other mode is always empty: `$app->commands` is `[]` in HTTP mode, and `$app->routes` is `[]` in CLI mode.
+
+The shape of an entry belongs to its dispatcher. See the [Router reference](../reference/router-reference-light.md) for routes and the [`citomni/cli` README](https://github.com/citomni/cli#readme) for commands.
+
+### 5.4 Service maps
+
+Precedence, highest first:
+
+| Precedence | HTTP | CLI |
+| --- | --- | --- |
+| 1 | `services_http.php` | `services_cli.php` |
+| 2 | `services.php` | `services.php` |
+| 3 | `MAP_HTTP` of the last provider | `MAP_CLI` of the last provider |
+| 4 | `MAP_COMMON` of the last provider | `MAP_COMMON` of the last provider |
+| ... | Earlier providers, in the same pattern | Earlier providers, in the same pattern |
+| Lowest | `\CitOmni\Http\Boot\Registry::MAP_HTTP` | `\CitOmni\Cli\Boot\Registry::MAP_CLI` |
+
+The kernel applies each source as `$map = $source + $map;`. The source applied later sits on the left of the union and wins:
+
+* A later provider in `providers.php` overrides an earlier one. Within one provider, the mode map overrides `MAP_COMMON`.
+* A definition replaces the earlier definition for the same id as a whole. `options` do not merge across sources.
+* Service maps have no environment overlay. Behavior that differs per environment belongs in cfg.
+* A provider constant or app file that is not an array throws `\RuntimeException`.
+
+A definition is an FQCN string or `['class' => FQCN, 'options' => [...]]`. The `App` creates a service on first access, as `new $class($app)` or `new $class($app, $options)`, and keeps it for its own lifetime.
+
+### 5.5 Providers
+
+Packages contribute to a mode through providers. `config/providers.php` returns an ordered list of provider class names, normally `Boot\Registry` classes, and every listed class must exist. The kernel reads only constants from a provider class, and every constant is optional:
+
+| Constant | Read in | Merged into |
+| --- | --- | --- |
+| `CFG_COMMON` | Both modes | Configuration, before the mode constant of the same provider |
+| `CFG_HTTP`, `CFG_CLI` | Its mode | Configuration |
+| `MAP_COMMON` | Both modes | Service map, below the mode constant of the same provider |
+| `MAP_HTTP`, `MAP_CLI` | Its mode | Service map |
+| `ROUTES_HTTP` | HTTP | Route table |
+| `COMMANDS_CLI` | CLI | Command table |
+
+The mode packages own the baselines; there is no vendor `CFG_COMMON` or `MAP_COMMON`. A package that reads a cfg path in both modes ships its default in `CFG_COMMON`, and a service used in both modes goes in `MAP_COMMON` instead of being copied into both mode maps.
+
+An illustrative provider that contributes to both modes:
+
+```php
+<?php
+declare(strict_types=1);
+
+namespace Acme\Reports\Boot;
 
 final class Registry {
+
+	// Defaults for cfg paths the package reads in both modes.
+	public const CFG_COMMON = [
+		'reports' => [
+			'retention_days' => 30,
+		],
+	];
+
+	// Defaults that only HTTP reads.
 	public const CFG_HTTP = [
-		'auth' => [
-			'twofactor' => true,
-			'max_attempts' => 5,
+		'reports' => [
+			'page_size' => 50,
 		],
 	];
 
-	public const MAP_HTTP = [
-		'auth' => \CitOmni\Auth\Service\AuthService::class,
+	// Services available in both modes.
+	public const MAP_COMMON = [
+		'reportStore' => \Acme\Reports\Service\ReportStore::class,
 	];
 
+	// HTTP dispatch.
 	public const ROUTES_HTTP = [
-		'/login.html' => [
-			'controller'    => \CitOmni\Auth\Controller\AuthController::class,
-			'action'        => 'login',
-			'methods'       => ['GET'],
-			'template_file' => 'public/login.html',
-			'template_layer'=> 'citomni/auth',
+		'/reports' => [
+			'controller' => \Acme\Reports\Controller\ReportController::class,
+			'action'     => 'index',
+			'methods'    => ['GET'],
 		],
-		'/login' => [
-			'controller' => \CitOmni\Auth\Controller\AuthController::class,
-			'action'     => 'loginPost',
-			'methods'    => ['POST'],
+	];
+
+	// CLI dispatch.
+	public const COMMANDS_CLI = [
+		'reports:build' => [
+			'command'     => \Acme\Reports\Command\BuildReportsCommand::class,
+			'description' => 'Build the daily reports.',
 		],
 	];
 }
 ```
 
-Providers are listed explicitly in the app-layer's `/config/providers.php`.
-During application boot, the kernel sequentially reads each listed class, merging their constants as follows:
-
-1. `CFG_HTTP` / `CFG_CLI` -> merged into configuration tree.
-2. `ROUTES_HTTP` / `ROUTES_CLI` -> merged into route table.
-3. `MAP_HTTP` / `MAP_CLI` -> merged into service map.
-
-This deterministic sequence ensures that provider order in `/config/providers.php` defines overlay precedence (last listed wins):
-- **Configuration & routes:** *last-wins* (later providers overwrite earlier entries).
-- **Services:** *left-wins per merge step*; the kernel unions maps as `$map = $pvMap + $map;`, so **later providers** (iterated later, placed on the left) override earlier ones; the **application** wins last via `$map = $appMap + $map;`.
-
 ---
 
-### 6.3 Kernel Integration
+## 6. Compiled caches
 
-At boot, the `App` kernel performs three independent merges:
+### 6.1 Files
 
-| Builder Method    | Reads (in order)                                                                                               | Merge rule                                   | Writes Cache To                     |
-|-------------------|----------------------------------------------------------------------------------------------------------------|----------------------------------------------|-------------------------------------|
-| `buildConfig()`   | `Boot/Config::CFG` -> providers `CFG_{HTTP or CLI}` -> app base cfg -> env overlay                                   | **last-wins** (deep associative)             | `var/cache/cfg.{HTTP or CLI}.php`      |
-| `buildRoutes()`   | `Boot/Routes::MAP_{HTTP or CLI}` -> providers `ROUTES_{HTTP or CLI}` -> app base routes -> env overlay                  | **last-wins** (by path key)                  | `var/cache/routes.{HTTP or CLI}.php`   |
-| `buildServices()` | `Boot/Services::MAP` -> providers `MAP_{HTTP or CLI}` -> app `/config/services.php`                                 | **left-wins per step** via union (`+`)       | `var/cache/services.{HTTP or CLI}.php` |
+| Mode | Configuration | Dispatch map | Service map |
+| --- | --- | --- | --- |
+| HTTP | `var/cache/cfg.http.php` | `var/cache/routes.http.php` | `var/cache/services.http.php` |
+| CLI | `var/cache/cfg.cli.php` | `var/cache/commands.cli.php` | `var/cache/services.cli.php` |
 
-> For services the kernel applies `$map = $pvMap + $map;` per provider and `$map = $appMap + $map;` last.  
-> That makes **later providers override earlier ones**, and the **application** override both.
+The paths are relative to `CITOMNI_APP_PATH`. Each file is a PHP script that returns the merged array, written with `var_export()`.
 
----
+### 6.2 Loading
 
-### 6.4 Architectural Rationale
+* The constructor loads the three files independently. A missing file, or one that does not return an array, is a cache miss, and only that artifact is built from its sources.
+* With all three files present, construction reads those three files and nothing else, apart from enum classes their values reference. It does not read `providers.php`, load any `Registry` class, or include any app config file.
+* Cache files are not checked against their sources. A cache built from older sources is used as is until it is warmed again or cleared, also after changes to `/config`, to `providers.php`, or to `Registry` constants in a `composer update`.
+* Cache file names carry the mode, not the environment. A cache warmed for `prod` is used as is when the same app root runs as `dev`.
+* The three files of a mode can come from different warm runs.
+* A cache file that fails while it is included is not a cache miss. A syntax error throws `\ParseError`, and a reference to an enum class or case that no longer exists throws `\Error`.
 
-This tri-part composition (`Config`, `Routes`, `Services`) achieves:
+### 6.3 Warming and clearing
 
-* **Full determinism:** all boot data known at compile-time.
-* **Mode isolation:** HTTP and CLI remain strictly separated.
-* **Zero boot overhead:** constants only-no functions, constructors, or filesystem reads.
-* **Extensibility:** providers can safely extend without mutating vendor baselines.
-* **Cache atomicity:** each map (`cfg`, `routes`, `services`) is compiled independently by `App::warmCache()`.
+`App::warmCache(bool $overwrite = true, bool $opcacheInvalidate = true, ?string $env = null): array` writes the three files of its own mode. `App::clearCache(bool $opcacheInvalidate = true): array` removes them. Both return `['cfg' => ?string, 'dispatch' => ?string, 'services' => ?string]` with the paths written or removed, and `null` for a file skipped or not present. Neither touches the files of the other mode.
 
----
+* All three arrays are built before the first write, so a build error leaves the existing files untouched.
+* Each file is replaced atomically through a temporary file and `rename()`. The set of three is not: When a write fails, the files written before it stay.
+* With `$overwrite = false`, an existing file is skipped.
+* `$env` builds cfg and the dispatch map for another environment than `CITOMNI_ENVIRONMENT`. The service map has no environment overlay, so `$env` does not affect it.
+* With `$opcacheInvalidate`, each file is invalidated in the OPcache of the calling SAPI only. A CLI process cannot reach the OPcache of the web server (PHP-FPM, mod_php).
 
-**In summary:**
+### 6.4 Operating the caches of both modes
 
-> Each mode package defines its immutable *baseline world* through three constants-`CFG`, `MAP`, and `MAP_HTTP|CLI`.
-> Providers extend it through `Boot/Registry.php`, and the kernel fuses everything into atomic caches for ultra-fast, deterministic startup.
+`citomni/cli` ships `cache:warm` and `cache:clear`. They handle the CLI caches through the running CLI `App`, and the HTTP caches through a second `App` that they construct in `Mode::HTTP` from the same `/config`.
 
----
-
-## 7. Integration with Kernel
-
-The `App` class in `citomni/kernel` centralizes all mode awareness.
-It is the single orchestrator that binds mode type to boot sequence.
-
-### 7.1 Mode Resolution in `App::buildConfig()`
-
-```php
-$base = match ($mode) {
-	Mode::HTTP => \CitOmni\Http\Boot\Config::CFG,
-	Mode::CLI  => \CitOmni\Cli\Boot\Config::CFG,
-};
+```bash
+php bin/citomni cache:warm --env=prod
+php bin/citomni cache:warm --mode=http --json
+php bin/citomni cache:clear --mode=cli
 ```
 
-### 7.2 Provider Overlay Resolution
+`--mode` is `all` (the default), `cli`, or `http`. With `all`, the CLI caches come first and the HTTP caches follow when `citomni/http` is installed. `--env` exists for `cache:warm` only and defaults to `CITOMNI_ENVIRONMENT`, or `prod` when it is not defined.
 
-```php
-$constName = ($mode === Mode::HTTP) ? 'CFG_HTTP' : 'CFG_CLI';
-$constFq = $fqcn . '::' . $constName;
-if (\defined($constFq)) {
-	$pv = \constant($constFq);
-	$cfg = Arr::mergeAssocLastWins($cfg, Arr::normalizeConfig($pv));
-}
+* **Environment mismatch:** Without `--env`, `cache:warm` builds the HTTP caches for the environment of the CLI process. When `bin/citomni` says `dev` on a production host, the HTTP caches get the `dev` overlays, and the web server uses them as is. Pass `--env`, or keep the two entry points in step.
+* **HTTP config in a CLI process:** Building the HTTP caches evaluates the HTTP config files of the app in the CLI process. A config file that needs `CITOMNI_PUBLIC_ROOT_URL` fails there in `dev`, because the scaffolded `bin/citomni` defines it only outside `dev` (Section 7).
+* **Literal paths:** Config values derived from `CITOMNI_APP_PATH` are written into the cache as literal paths. Warm the caches on the target host, at the deployed path.
+* **Web server OPcache:** With `opcache.validate_timestamps=0`, reload PHP-FPM or the web server after warming from the CLI. Alternatively, `POST /_system/reset-cache`, which removes the HTTP caches and resets OPcache inside the web SAPI, and warm again. `POST /_system/warmup-cache` warms the HTTP caches inside the web SAPI. Both routes are part of the `citomni/http` baseline and are protected by `webhooksAuth`.
+* **OPcache in the CLI:** The CLI SAPI uses OPcache only with `opcache.enable_cli=1`. Without it, the CLI caches still skip the merge, but PHP compiles them in every process.
+
+A deploy step that warms both modes:
+
+```bash
+composer install --no-dev --optimize-autoloader
+php bin/citomni cache:warm --mode=all --env=prod
 ```
 
-The same logic applies for `MAP_HTTP`/`MAP_CLI` in `buildServices()`.
-
-Thus, `App` functions as a **deterministic, side-effect-free merger** - reading only constants, never executing arbitrary code.
+The [`citomni/cli` README](https://github.com/citomni/cli#cache-operations) and the [`citomni/kernel` README](https://github.com/citomni/kernel#caches) cover permissions, recovery from broken caches, and JSON output.
 
 ---
 
-## 8. Design Principles
+## 7. Writing code for both modes
 
-### 8.1 Determinism
-
-All mode initialization is pure and reproducible.
-The same inputs (mode, providers, environment) always yield the same configuration and service graph.
-
-### 8.2 Zero-Execution Boot
-
-No function calls, file I/O, or reflection during merge.
-Only constant resolution and static array normalization.
-
-### 8.3 Explicit Boundaries
-
-Modes define the outermost boundary of an app.
-Providers extend; they never redefine mode semantics.
-
-### 8.4 Minimalism
-
-Two modes are sufficient; adding more would only increase entropy.
-
-### 8.5 Performance
-
-Mode segregation allows for **cache pre-warming** of all deterministic build artifacts.
-
-```
-
-var/cache/cfg.http.php
-var/cache/routes.http.php
-var/cache/services.http.php
-
-var/cache/cfg.cli.php
-var/cache/routes.cli.php
-var/cache/services.cli.php
-
-```
-
-Each file represents a fully merged, side-effect-free PHP array returned by  
-`App::buildConfig()`, `App::buildRoutes()`, and `App::buildServices()` respectively.
-
-All cache files are:
-
-* **Atomic** - written via temporary file + rename (no partial writes)  
-* **Pre-exported** - pure `return [ ... ];` structures, no runtime code  
-* **OPcache-friendly** - safe to precompile with `validate_timestamps=0`  
-* **Deterministic** - identical inputs always yield identical output  
-* **Independent** - config, routes, and services can be warmed or invalidated separately
-
-When these caches are present, the application performs **zero filesystem I/O** during boot or routing.  
-Startup time typically drops below one millisecond with memory peaks under a few hundred kilobytes.
+* **Shared logic sits below the adapters.** Controllers and commands belong to one mode; operations, repositories, services, and support classes do not. `app:info` in CLI and `/_system/appinfo.json` in HTTP are both thin adapters over `CitOmni\Kernel\Support\AppInfo`. See [Architecture](./architecture.md).
+* **Services exist per mode.** A service registered only in `MAP_HTTP` does not exist in CLI mode: `$app->request` throws `\RuntimeException` with the message `Unknown app component: app->request`. Register shared services in `MAP_COMMON` or `services.php`, and check optional ones with `$app->hasService()`.
+* **Cfg trees differ per mode.** The HTTP baseline ships `http`, `error_handler`, `session`, `cookie`, `security`, `view`, `maintenance`, `webhooks`, and `nonce`. The CLI baseline ships only `error_handler`. In CLI mode, `$app->cfg->session` throws `\OutOfBoundsException` unless a provider or the app adds `session`. Shared code reads such paths with `??`.
+* **Capability helpers see only the current mode.** `hasService()`, `hasAnyService()`, `hasPackage()`, and `hasNamespace()` inspect the service map and dispatch map of the current `App`. A package that contributes only CLI commands is invisible to `hasPackage()` in HTTP mode.
+* **`CITOMNI_PUBLIC_ROOT_URL` exists in HTTP only after boot.** The HTTP kernel defines it in step 2.6 when the entry point did not. Config files are evaluated earlier, in step 2.2 when no cfg cache exists, so they can rely on the constant only where the entry point defines it, and the `dev` scaffolds of `public/index.php` and `bin/citomni` do not. In CLI mode it exists only when `bin/citomni` defines it, so shared code that builds absolute URLs depends on the entry point.
+* **Long-running CLI processes catch per iteration.** The CLI error handler treats every exception that reaches it as fatal and ends the process with exit code 1. A worker that must survive a failed item catches the exception inside its loop.
+* **Long work leaves HTTP.** An HTTP request runs to completion inside one script execution. `citomni/jobrunner` enqueues a job from HTTP and executes it in a CLI process through `bin/citomni`. See [JobRunner execution ownership](./JobRunner-execution-ownership.md).
 
 ---
 
-## 9. Practical Implications
+## 8. Why two modes
 
-| Concern            | Impact of Mode Layer                                                                                                                       |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Autoloading**    | Mode packages provide PSR-4 namespaces under `CitOmni\Http\` and `CitOmni\Cli\`.                                                           |
-| **Service Lookup** | `$this->app->id` resolution depends on the mode's service map.                                                                             |
-| **Error Handling** | HTTP and CLI each define their own `ErrorHandler` implementations.                                                                         |
-| **Testing**        | Unit tests can bootstrap a lightweight mock of either mode for isolated testing.                                                           |
-| **Deployments**    | Cache warming (`App::warmCache()`) is executed per mode to ensure separation.                                                              |
-| **Routing**        | Each mode maintains its own compiled route cache (`var/cache/routes.{http or cli}.php`), merged deterministically by `App::buildRoutes()`. |
-| **Boot constants** | Each mode's vendor baseline explicitly includes `Boot/Routes` for first-party routes.                                                      | 
+### 8.1 Two execution shapes
 
----
+CitOmni runs in two execution shapes, and each mode matches one of them:
 
-## 10. Future Directions
+| | HTTP mode | CLI mode |
+| --- | --- | --- |
+| Unit of work | One request per script execution | One command per process |
+| Input | Superglobals: Server variables, query, body, cookies, files | `argv` |
+| Output | Status line, headers, body | STDOUT, STDERR, exit code |
+| Failure | Error page or JSON response, logged; the request ends | Message on STDERR, logged; exit code 1 |
+| Typical host | PHP-FPM behind a web server, Apache mod_php, `php -S` in development | Shell, cron, deploy scripts, worker processes |
 
-No additional runtime modes are planned or expected.
-Future expansion will occur within existing modes, via providers or sub-systems.
+The shapes differ in input, output, failure semantics, and lifecycle, which is why each has its own kernel, dispatcher, and error handler. Everything else is built inside one of them. JSON APIs, webhooks, and HTML pages are HTTP routes. Scheduled tasks, imports, deploy steps, and workers are CLI commands. Capabilities that both need are services, operations, or providers.
 
-Potential evolutions include:
+### 8.2 Why not a third mode
 
-* Specialized **HTTP adapters** (e.g., for Swoole or RoadRunner), still under HTTP mode.
-* **CLI workers** and **asynchronous daemons**, still under CLI mode.
-* Shared **runtime metrics** services across both modes.
+A new mode needs a new execution shape: Its own input model, output model, failure semantics, and entry point. A provider cannot supply those, which is why providers extend the two modes and never define new ones. No third mode is planned.
 
-Each is an extension *inside* a mode, not a new one.
+### 8.3 Limits of the HTTP kernel
+
+The HTTP kernel is written for the shared-nothing model of PHP. It defines `CITOMNI_PUBLIC_ROOT_URL` as a process constant, the `request` service reads superglobals, services live as long as the `App`, and the error handler ends the request with `exit(0)`. Persistent application servers that serve many requests per process, such as Swoole, RoadRunner, or FrankenPHP in worker mode, do not fit that model. Supporting one would take a different HTTP adapter, and it would still be HTTP mode, not a new one.
 
 ---
 
-## 11. Summary
+## 9. Design principles
 
-| Aspect              | HTTP Mode                                                                 | CLI Mode                                                             |
-| ------------------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| Entry point         | `public/index.php`                                                        | `bin/console`                                                        |
-| Baseline package    | `citomni/http`                                                            | `citomni/cli`                                                        |
-| Boot constants      | `Boot\Config::CFG`, `Boot\Services::MAP`, `Boot\Routes::MAP_HTTP`         | `Boot\Config::CFG`, `Boot\Services::MAP`, `Boot\Routes::MAP_CLI`     |
-| I/O model           | Request-Response (HTTP/FastCGI)                                           | Stream (stdin/stdout)                                                |
-| Common overlays     | Providers (`CFG_HTTP`, `MAP_HTTP`, `ROUTES_HTTP`)                         | Providers (`CFG_CLI`, `MAP_CLI`, `ROUTES_CLI`)                       |
-| Configuration cache | `var/cache/cfg.http.php`                                                  | `var/cache/cfg.cli.php`                                              |
-| Routes cache        | `var/cache/routes.http.php`                                               | `var/cache/routes.cli.php`                                           |
-| Service cache       | `var/cache/services.http.php`                                             | `var/cache/services.cli.php`                                         |
-
-CitOmni's runtime/execution mode layer thus establishes a minimal yet complete framework for deterministic, high-performance PHP applications.
-Its binary division (HTTP / CLI) is deliberate, sufficient, and theoretically closed under all current and foreseeable PHP workloads.
+* **Determinism:** The same mode, sources, provider order, and environment produce the same configuration, dispatch map, and service map.
+* **Data-only composition:** The merge reads class constants and PHP files that return arrays. It does not instantiate providers, run provider code, scan directories, or use reflection. Without caches it does include `providers.php` and the app files, and it loads the `Registry` classes through the autoloader.
+* **Explicit mode selection:** The entry point names the mode. Nothing detects it.
+* **Mode isolation:** Each mode reads only its own mode package, its own app files, and its own cache files. Sharing is explicit, through `citomni_cfg.php`, `services.php`, `CFG_COMMON`, and `MAP_COMMON`.
+* **Caches are a performance tool:** With warm caches, construction reads three files. They are not a correctness mechanism; keeping them current is the job of the deploy step.
 
 ---
 
-**In essence:**
+## 10. Summary
 
-> *Two modes, one philosophy: explicit, deterministic, fast.*
+CitOmni has two runtime modes because it runs in two execution shapes. The entry point declares the mode, an `App` keeps it for its lifetime, and the mode selects the baseline, the app files, the dispatch map, the services, the error handler, and the cache files. Everything else is shared.
+
+> *Two modes, one philosophy: Explicit, deterministic, fast.*
 > CitOmni does not guess. It knows.
+
+---
+
+## Related documents
+
+* [Architecture](./architecture.md): Layers, adapters, and wiring.
+* [Provider packages](./services-and-providers.md) and [Build a provider](../how-to/providers-build-a-provider.md): Provider design.
+* [Routing layer](./routing-layer-http-runtime.md) and [Router reference](../reference/router-reference-light.md): HTTP dispatch.
+* [Maintenance mode](./maintenance-mode.md): The maintenance guard in the HTTP boot.
+* [JobRunner execution ownership](./JobRunner-execution-ownership.md): Work started in HTTP and run in CLI.
+* Package READMEs: [`citomni/kernel`](https://github.com/citomni/kernel#readme), [`citomni/http`](https://github.com/citomni/http#readme), [`citomni/cli`](https://github.com/citomni/cli#readme).
