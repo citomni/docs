@@ -788,7 +788,7 @@ Use this for invoices, exports, generated archives, and similar download endpoin
 
 CitOmni's `session` service is the preferred way for Controllers to work with session state.
 
-The service starts the session lazily on first use. In practice, the common read / write methods ensure the session is started automatically.
+The service starts the session lazily. Writes create it; reads resume a session that exists and never create one, so a guest page that only reads session state gets no session cookie.
 
 ### Starting and state checks
 
@@ -801,8 +801,9 @@ $sessionId = $this->app->session->id();
 Notes:
 
 * `start()` explicitly ensures that the session is started
-* `get()`, `set()`, `has()`, and `remove()` ensure startup automatically
-* `regenerate()` requires an already active session and throws if no session is active
+* `set()` and `regenerate()` start the session when needed
+* `get()`, `has()`, `remove()` and `destroy()` resume an existing session; without one they return `null`, `false` or nothing
+* `isActive()` and `id()` report `false` and `null` until the session's first read or write, also when the request carries the session cookie
 
 ### Reading and writing session values
 
@@ -824,12 +825,11 @@ $this->app->session->destroy(false);
 
 Behavior:
 
-* Clears session data
-* Destroys the PHP session
-* Resets `$_SESSION`
+* Does nothing when there is no session
+* Clears session data and destroys the PHP session; throws when storage refuses
 * Deletes the session cookie by default
 
-This is the correct default for logout flows.
+Logout in `citomni/authenticate` rotates the session id instead and keeps the session, for example for a flash message after the redirect.
 
 ### Regenerating the session ID
 
@@ -842,15 +842,15 @@ Use this after login, privilege elevation, or other security-sensitive auth tran
 
 Notes:
 
-* `regenerate()` throws when no session is active
-* The service records the rotation timestamp internally
-* The service may also rotate automatically depending on `session.rotate_interval` config
+* `regenerate()` starts the session when it is not active, and throws when PHP refuses the rotation
+* `regenerate(true)` deletes the old session at once, so a concurrent request that still presents the old id gets a new, empty session. Rotate at privilege changes, not on a timer.
+* There is no automatic rotation; `session.rotate_interval` was removed and throws while it is enabled
 
 ### Recommended Session usage rules
 
 * Prefer `$this->app->session` over raw `$_SESSION`
-* Regenerate the session ID after successful login
-* Destroy the session on logout
+* Regenerate the session ID after successful login and at other privilege changes
+* Let `citomni/authenticate` handle login and logout
 * Do not store large arbitrary payloads in session state
 * Keep session usage transport-focused inside Controllers
 
@@ -950,7 +950,7 @@ Behavior:
 
 CitOmni's `cookie` service is the preferred way for Controllers to work with browser cookies.
 
-The service derives sensible defaults from `cookie` and `http` config, including `secure`, `httponly`, `samesite`, `path`, and optional `domain`.
+The service owns the default attributes of every cookie, the session cookie included: `secure`, `httponly`, `samesite`, `path` and `domain` come from the `cookie` config. Cookies are host-only unless `cookie.domain` is set, and `secure: null` is inferred from an https `http.base_url`, an https `CITOMNI_PUBLIC_ROOT_URL` or the request. Invalid values throw.
 
 ### Reading cookies
 
@@ -979,6 +979,7 @@ Behavior:
 * Options are merged with service defaults
 * `ttl` is supported and converted to `expires`
 * `SameSite=None` requires `Secure=true`
+* `set()` and `delete()` return `false` when PHP refuses the header (headers already sent)
 * When the cookie is visible to the current request scope, the service updates `$_COOKIE` in-memory
 
 ### Deleting cookies
@@ -992,13 +993,14 @@ $this->app->cookie->delete('remember_token', [
 
 Use the same path / domain semantics as the cookie was set with when deletion needs to be exact.
 
-### Reading effective defaults
+### Reading effective attributes
 
 ```php
 $defaults = $this->app->cookie->defaults();
+$strict = $this->app->cookie->attributes(['samesite' => 'Strict']);
 ```
 
-This is useful when a Controller or collaborator needs to align custom cookie behavior with the framework's configured defaults.
+`defaults()` returns the configured defaults. `attributes()` returns them with normalized overrides on top and validates the combination, as `set()` and `delete()` do. The Session service resolves the session cookie this way.
 
 ### Recommended Cookie usage rules
 

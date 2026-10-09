@@ -148,8 +148,8 @@ public function forgetOld(array $keys): void;
 
 ## 6. Semantics & Guarantees
 
-1. **Lazy session start:** Flash never starts sessions during `init()`. Session starts only **on first use** via `Session::start()` (through the service).
-2. **Deterministic bags:** `_flash.msg` and `_flash.old` are always arrays when present; created lazily in `ensureBags()`.
+1. **Reads never create a session:** Flash never starts a session during `init()` or on a read. In a request without a session, every bag reads as empty, and `pullAll()`, `peekAll()`, `peek()`, `take()`, `oldValue()`, `hasOld()`, `clear()`, `keep(false)` and the `forget*()` helpers send no session cookie. The first write (`set()`, `add()`, `old()`, `fieldErrors()`, `keep()`) starts the session through `Session::set()`.
+2. **Deterministic bags:** `_flash.msg`, `_flash.old` and `_flash.err` are arrays when present; a missing bag reads as an empty array. Calls that change nothing, such as `old([])` or `forgetOld()` of absent keys, write nothing.
 3. **Reflash behavior:** Calling `keep(true)` sets `_flash.keep`. The next `pullAll()` **preserves** bags and **consumes** `_flash.keep`.
 4. **UTF-8 safety:** `MAX_MSG_STRLEN` applies to **bytes**, but trimming backs off to the last valid UTF-8 boundary.
 5. **Fail fast:** Caps are enforced with `\RuntimeException`; no global catch within the service.
@@ -199,7 +199,7 @@ $this->app->flash->add('info', 'Done'); // oldest evicted on overflow
 
 ## 8. Interoperability (Session, Request, Response)
 
-* **Session:** Flash exclusively uses `Session`'s public API (`isActive()`, `start()`, `has()`, `get()`, `set()`, `remove()`). It does **not** assume any specific session handler or cookie name.
+* **Session:** Flash exclusively uses `Session`'s public API (`get()`, `set()`, `remove()`). It does **not** assume any specific session handler or cookie name.
 * **Request:** Flash is transport-agnostic; it does not read `$_POST/$_GET` itself. Use `Request::only()` / `except()` to assemble old input.
 * **Response:** Flash does not send headers; controllers are responsible for `redirect()` and content rendering.
 
@@ -273,7 +273,7 @@ return [
 | Messages persist unexpectedly      | `keep()` was set; ensure it is not called or call `keep(false)` to cancel.           |
 | Buckets "lose" entries             | `MAX_MSG_LIST_SIZE` evicted oldest items; increase at code level if truly needed.    |
 | Cap exceptions (`key cap reached`) | Too many distinct message buckets or old-input keys; consolidate or clear earlier.   |
-| No messages across redirect        | Session not starting; ensure `Session` is available and not blocked by headers sent. |
+| No messages across redirect        | The session cookie did not come back. Check its Secure flag (a Secure cookie is not stored over plain HTTP), path and domain. |
 
 ---
 
