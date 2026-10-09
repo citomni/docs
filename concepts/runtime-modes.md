@@ -97,10 +97,10 @@ The entry point defines a few constants before it hands over to a kernel. `App` 
 | `CITOMNI_APP_PATH` | Both entry points; required | App root. `App` derives its cache paths and `getAppRoot()` from it. |
 | `CITOMNI_ENVIRONMENT` | Both entry points | Selects the `{ENV}` overlays (Section 5). When it is not defined, `App` uses `prod`. |
 | `CITOMNI_PUBLIC_PATH` | `public/index.php`; the scaffolded `bin/citomni` as well | Absolute path to `/public`, read by services such as `upload` and by shared code. |
-| `CITOMNI_PUBLIC_ROOT_URL` | The entry point, or the HTTP kernel | Absolute public base URL without a trailing slash. In HTTP mode the kernel defines it when the entry point did not (Section 4.2, step 2.6). In CLI mode only the entry point defines it. The scaffolded `bin/citomni` defines the placeholder `https://www.example.com` outside `dev`; replace it with the real URL. |
+| `CITOMNI_PUBLIC_ROOT_URL` | The entry point, or the HTTP kernel | Absolute public base URL without a trailing slash. In HTTP mode the kernel defines it when the entry point did not (Section 4.2, step 2.6). In CLI mode only the entry point defines it. The scaffolded `bin/citomni` defines it in `stage` and `prod` from the installer placeholders `STAGE_ROOT_URL` and `PROD_ROOT_URL`, and leaves it undefined in `dev`. |
 | `CITOMNI_START_NS` | Both entry points; optional | `hrtime(true)` at entry. The HTTP `?_perf` footer measures from it. |
 
-Each entry point defines its own `CITOMNI_ENVIRONMENT`. Nothing keeps `public/index.php` and `bin/citomni` in step; Section 6.4 shows where a mismatch hurts.
+Each entry point defines its own `CITOMNI_ENVIRONMENT`. `citomni/installer` materializes `public/index.php` and `bin/citomni` for the same recorded environment, and `citomni-installer environment <env>` switches both. A hand-edited entry point can still disagree with the other one; Section 6.4 shows where a mismatch hurts.
 
 ### 4.2 HTTP boot
 
@@ -139,41 +139,37 @@ require __DIR__ . '/../vendor/autoload.php';
 
 ### 4.3 CLI boot
 
-`bin/citomni`, as scaffolded without its comments:
+`bin/citomni`, as scaffolded for production, without its comments and with an example URL:
 
 ```php
 <?php
 declare(strict_types=1);
 
 define('CITOMNI_START_NS', hrtime(true));
-define('CITOMNI_ENVIRONMENT', 'dev');
+define('CITOMNI_ENVIRONMENT', 'prod');
 define('CITOMNI_PUBLIC_PATH', \dirname(__DIR__) . '/public');
 define('CITOMNI_APP_PATH', \dirname(__DIR__));
-
-if (\defined('CITOMNI_ENVIRONMENT') && \CITOMNI_ENVIRONMENT !== 'dev') {
-	define('CITOMNI_PUBLIC_ROOT_URL', 'https://www.example.com');
-}
+define('CITOMNI_PUBLIC_ROOT_URL', 'https://www.example.com');
 
 require CITOMNI_APP_PATH . '/vendor/autoload.php';
 
 \CitOmni\Cli\Kernel::run(CITOMNI_APP_PATH . '/config', $_SERVER['argv'] ?? []);
 ```
 
+`citomni/installer` materializes `bin/citomni` per environment, like `public/index.php`. The `stage` variant takes `CITOMNI_PUBLIC_ROOT_URL` from `STAGE_ROOT_URL` instead of `PROD_ROOT_URL`, and the `dev` variant does not define it.
+
 Run it as `php bin/citomni <command>`. `\CitOmni\Cli\Kernel::run(string $configDir, array $argv): never` takes the config directory explicitly; there is no path resolution as in HTTP.
 
 1. `Kernel::boot()`:
    1. `new App($configDir, Mode::CLI)`: Load cfg, commands, and services from the caches, or build them.
-   2. `Runtime::configure($app->cfg)`, as in HTTP.
-   3. `$app->errorHandler->install()`, when an `errorHandler` service is registered.
+   2. `$app->errorHandler->install()`, when an `errorHandler` service is registered.
+   3. `Runtime::configure($app->cfg)`, as in HTTP.
 2. `$app->runner->run($argv)`. `$argv[1]` names the command. Without a command, or with `list`, the runner prints the command list and returns 0. An unknown command writes to STDERR and returns 2.
 3. `exit()` with the returned code: `0` for success, `1` for failure, `2` for a usage error (`BaseCommand::SUCCESS`, `FAILURE`, and `USAGE`). Uncaught exceptions and fatal errors end the process with `1` through the CLI error handler.
 
 The CLI boot has no output buffering, no maintenance guard, no public URL resolution, no trusted proxies, and no intl requirement.
 
-Two details of the order matter when boot fails:
-
-* In both modes, the error handler is a service of the `App`, so a failure while the `App` is constructed (for example a malformed `providers.php`) happens before any error handler is installed.
-* The CLI boot calls `Runtime::configure()` before it installs the error handler; HTTP does the reverse. An exception from `Runtime::configure()`, such as an invalid `locale.timezone`, therefore ends a CLI boot as an uncaught PHP error with exit code 255, and nothing is written to the CLI error log.
+The order matters when boot fails. In both modes, the error handler is a service of the `App`, so a failure while the `App` is constructed (for example a malformed `providers.php`) happens before any error handler is installed. Both modes install the error handler before they call `Runtime::configure()`, so an exception from `Runtime::configure()`, such as an invalid `locale.timezone`, goes through the error handler.
 
 ### 4.4 Booting without dispatch
 
@@ -392,7 +388,7 @@ php bin/citomni cache:clear --mode=cli
 
 `--mode` is `all` (the default), `cli`, or `http`. With `all`, the CLI caches come first and the HTTP caches follow when `citomni/http` is installed. `--env` exists for `cache:warm` only and defaults to `CITOMNI_ENVIRONMENT`, or `prod` when it is not defined.
 
-* **Environment mismatch:** Without `--env`, `cache:warm` builds the HTTP caches for the environment of the CLI process. When `bin/citomni` says `dev` on a production host, the HTTP caches get the `dev` overlays, and the web server uses them as is. Pass `--env`, or keep the two entry points in step.
+* **Environment mismatch:** Without `--env`, `cache:warm` builds the HTTP caches for the environment of the CLI process. Entry points materialized by `citomni/installer` agree on that environment. When `bin/citomni` was edited by hand and says another environment than `public/index.php`, the HTTP caches get that environment's overlays, and the web server uses them as is. Pass `--env` in that case.
 * **HTTP config in a CLI process:** Building the HTTP caches evaluates the HTTP config files of the app in the CLI process. A config file that needs `CITOMNI_PUBLIC_ROOT_URL` fails there in `dev`, because the scaffolded `bin/citomni` defines it only outside `dev` (Section 7).
 * **Literal paths:** Config values derived from `CITOMNI_APP_PATH` are written into the cache as literal paths. Warm the caches on the target host, at the deployed path.
 * **Web server OPcache:** With `opcache.validate_timestamps=0`, reload PHP-FPM or the web server after warming from the CLI. Alternatively, `POST /_system/reset-cache`, which removes the HTTP caches and resets OPcache inside the web SAPI, and warm again. `POST /_system/warmup-cache` warms the HTTP caches inside the web SAPI. Both routes are part of the `citomni/http` baseline and are protected by `webhooksAuth`.
