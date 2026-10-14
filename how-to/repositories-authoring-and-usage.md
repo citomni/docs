@@ -657,6 +657,13 @@ The following patterns cover most day-to-day Repository work.
 ### Find by id
 
 ```php
+/**
+ * Find one user by id.
+ *
+ * @param  int  $userId  User id, at least 1.
+ * @return array{id:int,email:string,status:string,created_at:string}|null  Null when no user has the id.
+ * @throws \InvalidArgumentException  When the user id is below 1.
+ */
 public function findById(int $userId): ?array {
 	if ($userId < 1) {
 		throw new \InvalidArgumentException('User id must be >= 1.');
@@ -686,6 +693,13 @@ public function findById(int $userId): ?array {
 ### Exists by unique field
 
 ```php
+/**
+ * Check whether a user exists for an email address.
+ *
+ * @param  string  $email  Trimmed before use; must not be empty.
+ * @return bool
+ * @throws \InvalidArgumentException  When the trimmed email is empty.
+ */
 public function existsByEmail(string $email): bool {
 	$email = \trim($email);
 	if ($email === '') {
@@ -699,6 +713,12 @@ public function existsByEmail(string $email): bool {
 ### Insert and return id
 
 ```php
+/**
+ * Insert a new user and return the generated id.
+ *
+ * @param  array{email:string,password_hash:string,status:string,created_at:string}  $data
+ * @return int  New user id.
+ */
 public function insertUser(array $data): int {
 	return $this->app->db->insert('users', [
 		'email'         => $data['email'],
@@ -712,6 +732,14 @@ public function insertUser(array $data): int {
 ### Update with bounded WHERE
 
 ```php
+/**
+ * Update the password hash for a specific user.
+ *
+ * @param  int  $userId  User id, at least 1.
+ * @param  string  $passwordHash  New password hash; must not be empty.
+ * @return int  Affected row count.
+ * @throws \InvalidArgumentException  When the user id is below 1 or the hash is empty.
+ */
 public function updatePasswordHash(int $userId, string $passwordHash): int {
 	if ($userId < 1) {
 		throw new \InvalidArgumentException('User id must be >= 1.');
@@ -732,6 +760,12 @@ public function updatePasswordHash(int $userId, string $passwordHash): int {
 ### Delete expired rows
 
 ```php
+/**
+ * Delete the password reset tokens that expired before a point in time.
+ *
+ * @param  string  $now  Cut-off, in the datetime format of expires_at.
+ * @return int  Number of deleted tokens.
+ */
 public function deleteExpiredResetTokens(string $now): int {
 	return $this->app->db->delete(
 		'password_reset_tokens',
@@ -1117,8 +1151,19 @@ Transactions belong close to persistence, but their ownership depends on scope.
 Example:
 
 ```php
+/**
+ * Replace all roles of a user.
+ *
+ * Behavior:
+ * - Afterwards the user has exactly the given roles.
+ * - Atomic: A failure leaves the previous roles in place.
+ *
+ * @param  int  $userId  User id.
+ * @param  list<int>  $roleIds  Role ids to assign; an empty list removes every role.
+ * @return void
+ */
 public function replaceUserRoles(int $userId, array $roleIds): void {
-	$this->app->db->transaction(function(): void use ($userId, $roleIds) {
+	$this->app->db->transaction(function() use ($userId, $roleIds): void {
 		$this->app->db->delete('user_role', 'user_id = ?', [$userId]);
 
 		$rows = [];
@@ -1269,22 +1314,35 @@ declare(strict_types=1);
 namespace App\Http\Controller;
 
 use App\Repository\UserRepository;
-use CitOmni\Http\Controller\BaseController;
+use CitOmni\Kernel\Controller\BaseController;
 
+/**
+ * UserController: HTTP adapter for user pages.
+ */
 final class UserController extends BaseController {
-	public function show(): void {
-		$userId = (int)($this->app->request->getQuery('id') ?? 0);
 
-		$repo = new UserRepository($this->app);
-		$user = $repo->findById($userId);
+	/**
+	 * Render the signed-in user's page.
+	 *
+	 * Behavior:
+	 * - 404 through httpError() when no user is signed in or the user no longer exists.
+	 *
+	 * @return void
+	 */
+	public function show(): void {
+		$userId = (int)$this->app->session->get('user_id');
+		$user = $userId > 0 ? (new UserRepository($this->app))->findById($userId) : null;
 
 		if ($user === null) {
-			throw new \RuntimeException('User not found.');
+			$this->app->errorHandler->httpError(404, [
+				'message' => 'User not found.',
+			]);
+			return;
 		}
 
-		$this->app->response->setBody(
-			$this->app->tplEngine->render('member/user/show.html', ['user' => $user])
-		);
+		$this->app->tplEngine->render($this->routeConfig['template_file'] . '@' . $this->routeConfig['template_layer'], [
+			'user' => $user,
+		]);
 	}
 }
 ```
@@ -1300,8 +1358,22 @@ namespace App\Operation;
 use App\Repository\UserRepository;
 use CitOmni\Kernel\Operation\BaseOperation;
 
+/**
+ * ResetPassword: Operation that sets a new password hash for a user.
+ *
+ * Persistence belongs to UserRepository, and transport to the calling adapter.
+ */
 final class ResetPassword extends BaseOperation {
-	public function run(int $userId, string $passwordHash): array {
+
+	/**
+	 * Store a new password hash for a user.
+	 *
+	 * @param  int  $userId  User id, at least 1.
+	 * @param  string  $passwordHash  New password hash; must not be empty.
+	 * @return array{user_id:int,updated:bool}
+	 * @throws \InvalidArgumentException  When UserRepository rejects the id or the hash.
+	 */
+	public function execute(int $userId, string $passwordHash): array {
 		$repo = new UserRepository($this->app);
 		$repo->updatePasswordHash($userId, $passwordHash);
 

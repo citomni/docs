@@ -155,6 +155,18 @@ final class SleepJobHandler implements JobHandlerInterface {
 	private const MIN_INTERVAL_MS = 100;
 	private const MAX_INTERVAL_MS = 5000;
 
+	/**
+	 * Sleep in steps while reporting progress, and stop early on cancellation.
+	 *
+	 * Behavior:
+	 * - Reads seconds and interval_ms from the payload, clamped to the class bounds.
+	 * - Checks for cancellation before each step; a cancelled run returns cancelled true.
+	 * - Each step updates the step progress, writes a stdout line and sends a heartbeat.
+	 * - A completed run also returns the effective seconds and interval_ms.
+	 *
+	 * @param  JobContext  $context
+	 * @return array{cancelled:bool,completed_steps:int,total_steps:int,seconds?:int,interval_ms?:int}
+	 */
 	public function run(JobContext $context): array {
 		$payload    = $context->payload();
 		$seconds    = $this->payloadInt($payload, 'seconds', self::DEFAULT_SECONDS, self::MIN_SECONDS, self::MAX_SECONDS);
@@ -218,6 +230,16 @@ final class SleepJobHandler implements JobHandlerInterface {
 		];
 	}
 
+	/**
+	 * Read an integer option from the payload, clamped to a range.
+	 *
+	 * @param  array<string,mixed>  $payload
+	 * @param  string  $key
+	 * @param  int  $default  Used when the value is neither an int nor a string of digits.
+	 * @param  int  $min
+	 * @param  int  $max
+	 * @return int  A value from $min to $max.
+	 */
 	private function payloadInt(array $payload, string $key, int $default, int $min, int $max): int {
 		$value = $payload[$key] ?? $default;
 
@@ -308,6 +330,11 @@ use CitOmni\Kernel\Command\BaseCommand;
 final class StartSleepJobCommand extends BaseCommand {
 	private const JOB_TYPE = 'smoke.sleep';
 
+	/**
+	 * Declare the command's options.
+	 *
+	 * @return array<string,mixed>  Options seconds, interval-ms and lock-key.
+	 */
 	protected function signature(): array {
 		return [
 			'options' => [
@@ -330,6 +357,20 @@ final class StartSleepJobCommand extends BaseCommand {
 		];
 	}
 
+	/**
+	 * Start the sleep smoke job and report the outcome.
+	 *
+	 * StartJob makes the decision. This command clamps its options, runs the Operation and
+	 * translates its status to output and an exit code.
+	 *
+	 * Behavior:
+	 * - Started or already active: Prints the job and returns SUCCESS.
+	 * - Queued, but the worker launch failed: Prints the job and returns FAILURE.
+	 * - Any other status returns FAILURE.
+	 *
+	 * @return int  Exit code.
+	 * @see \CitOmni\JobRunner\Operation\StartJob::execute()  The start statuses.
+	 */
 	protected function execute(): int {
 		$seconds    = $this->boundedInt($this->getInt('seconds'), 1, 3600);
 		$intervalMs = $this->boundedInt($this->getInt('interval-ms'), 100, 5000);
@@ -374,6 +415,14 @@ final class StartSleepJobCommand extends BaseCommand {
 		return self::FAILURE;
 	}
 
+	/**
+	 * Clamp a value to a range.
+	 *
+	 * @param  int  $value
+	 * @param  int  $min
+	 * @param  int  $max
+	 * @return int
+	 */
 	private function boundedInt(int $value, int $min, int $max): int {
 		if ($value < $min) {
 			return $min;
@@ -386,12 +435,24 @@ final class StartSleepJobCommand extends BaseCommand {
 		return $value;
 	}
 
+	/**
+	 * Trim a lock key and map an empty key to no lock.
+	 *
+	 * @param  string  $lockKey
+	 * @return string|null  Null disables locking.
+	 */
 	private function normalizeLockKey(string $lockKey): ?string {
 		$lockKey = \trim($lockKey);
 
 		return $lockKey === '' ? null : $lockKey;
 	}
 
+	/**
+	 * Print the identity fields of a StartJob result that are present.
+	 *
+	 * @param  array<string,mixed>  $result  StartJob result.
+	 * @return void
+	 */
 	private function printJobResult(array $result): void {
 		$jobId     = isset($result['job_id']) ? (int)$result['job_id'] : 0;
 		$jobUuid   = isset($result['job_uuid']) ? (string)$result['job_uuid'] : '';

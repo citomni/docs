@@ -18,18 +18,19 @@
 
 A **provider** is a Composer package that contributes **configuration overlays**, **routes**, and **services** to a CitOmni application **purely via constants**. No runtime scanning. No reflection. No side effects.
 
-Providers expose up to six constants on a single class: `Boot\Registry`.
+Providers expose these constants on a single class, `Boot\Registry`, and declare only the ones they need:
 
-* `CFG_HTTP`, `CFG_CLI` - configuration overlays (deep, **last-wins**)
-* `ROUTES_HTTP`, `ROUTES_CLI` - route overlays (path-keyed, **last-wins**)
-* `MAP_HTTP`, `MAP_CLI` - service maps (ID-keyed, **left-wins per merge step**; in practice, **later providers override earlier ones**, and the **application layer wins last**)
+* `CFG_COMMON`, `CFG_HTTP`, `CFG_CLI` - configuration overlays (deep, **last-wins**; the mode-specific constant wins over `CFG_COMMON`)
+* `MAP_COMMON`, `MAP_HTTP`, `MAP_CLI` - service maps (ID-keyed, **left-wins per merge step**; in practice, **later providers override earlier ones**, and the **application layer wins last**)
+* `ROUTES_HTTP` - HTTP routes (path-keyed, **last-wins**)
+* `COMMANDS_CLI` - CLI commands
 
 
-The kernel reads those constants during boot and compiles three atomic caches:
+The kernel reads those constants during boot and compiles three atomic caches per mode:
 
 ```
 var/cache/cfg.{http|cli}.php
-var/cache/routes.{http|cli}.php
+var/cache/routes.http.php, var/cache/commands.cli.php
 var/cache/services.{http|cli}.php
 ```
 
@@ -328,10 +329,23 @@ use CitOmni\Kernel\Controller\BaseController;
  */
 final class DemoController extends BaseController {
 
+	/**
+	 * Run setup and guards that every action needs.
+	 *
+	 * Notes:
+	 * - Holds no access guard, so each action is exactly as exposed as its route.
+	 *
+	 * @return void
+	 * @see \CitOmni\Kernel\Controller\BaseController::__construct()  Calls it before every action.
+	 */
 	protected function init(): void {
-		// Optional setup (runs once per controller instance)
 	}
 
+	/**
+	 * Render the demo page with a greeting.
+	 *
+	 * @return void
+	 */
 	public function index(): void {
 		$msg = $this->app->greeter->greet('World');
 		$this->app->tplEngine->render('public/demo.html@vendor-name/my-provider', [
@@ -339,10 +353,19 @@ final class DemoController extends BaseController {
 		]);
 	}
 
+	/**
+	 * Handle the demo form and redirect to the demo page.
+	 *
+	 * Behavior:
+	 * - A rejected CSRF token throws, and the global error handler answers.
+	 * - Otherwise redirects to /demo.html.
+	 *
+	 * @return void
+	 * @throws \CitOmni\Http\Exception\CsrfVerificationException  When the CSRF token is rejected.
+	 */
 	public function postAction(): void {
-		// Example CSRF guard (recommended for POST actions)
-		// Tip: Render field via {{ $csrfField() }} in your template.
-		$this->app->security->guardCsrf($this->app->request->post('_csrf'));
+		// The form renders its token with {{{ $csrfField() }}}.
+		$this->app->csrf->requireValid();
 
 		// Handle input / persistence / etc.
 		$this->app->response->redirect('/demo.html');
@@ -597,6 +620,16 @@ final class DemoService extends BaseService {
 
 	private string $suffix = '';
 
+	/**
+	 * Resolve the ping suffix once per instance.
+	 *
+	 * Behavior:
+	 * - Precedence: The suffix option when set, then " - from " followed by cfg
+	 *   identity.app_name, then no suffix.
+	 * - Clears $this->options after reading them.
+	 *
+	 * @return void
+	 */
 	protected function init(): void {
 		$opt = $this->options;
 		$this->options = []; // free memory, avoid accidental reuse
@@ -605,6 +638,11 @@ final class DemoService extends BaseService {
 		$this->suffix = (string)($opt['suffix'] ?? ($appName !== '' ? ' - from ' . $appName : ''));
 	}
 
+	/**
+	 * Answer a liveness string.
+	 *
+	 * @return string  "pong" followed by the suffix.
+	 */
 	public function ping(): string {
 		return 'pong' . $this->suffix;
 	}
@@ -628,11 +666,23 @@ use CitOmni\Kernel\Controller\BaseController;
  */
 final class DemoController extends BaseController {
 
+	/**
+	 * Run setup and guards that every action needs.
+	 *
+	 * Notes:
+	 * - Holds no access guard, so each action is exactly as exposed as its route.
+	 *
+	 * @return void
+	 * @see \CitOmni\Kernel\Controller\BaseController::__construct()  Calls it before every action.
+	 */
 	protected function init(): void {
-		// Optional per-controller setup (once per instance).
-		// Keep it side-effect free and cheap.
 	}
 
+	/**
+	 * Render the demo page with the demo service's ping answer.
+	 *
+	 * @return void
+	 */
 	public function index(): void {
 		$msg = 'Service says: ' . $this->app->demo->ping();
 

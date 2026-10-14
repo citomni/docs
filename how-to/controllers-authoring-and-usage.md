@@ -202,7 +202,7 @@ Typical pattern:
 
 ```php
 $operation = new \Vendor\Package\Operation\ResetPassword($this->app);
-$result = $operation->run($input);
+$result = $operation->execute($input);
 ```
 
 The Controller then translates `$result` into HTTP behavior.
@@ -261,10 +261,11 @@ Reusable provider packages typically declare HTTP routes in:
 
 `src/Boot/Registry.php`
 
-Using constants such as:
+Using the constant:
 
 * `ROUTES_HTTP`
-* optionally `ROUTES_CLI` if relevant for a CLI routing setup
+
+CLI commands are a separate dispatch map, `COMMANDS_CLI`.
 
 Example:
 
@@ -398,7 +399,7 @@ $this->app->cfg
 Example:
 
 ```php
-$csrfEnabled = (bool)($this->app->cfg->security->csrf_protection ?? true);
+$csrfEnabled = (bool)($this->app->cfg->security->csrf->enabled ?? true);
 ```
 
 Important behavior:
@@ -433,6 +434,11 @@ Typical flow:
 Example outline:
 
 ```php
+/**
+ * <One-line summary, imperative.>
+ *
+ * @return void
+ */
 public function index(): void {
 	// 1) Read input
 	// 2) Normalize
@@ -1071,27 +1077,27 @@ Template rendering belongs in Controllers, not in Operations or Repositories. Th
 
 ## 21) Method-specific action handling
 
-A route may allow one or more methods, but the Controller should still keep method handling explicit and readable.
+The route's `'methods'` decide which verbs reach an action. The Router answers 405 for the others and adds HEAD wherever GET is allowed, so an action never checks for a disallowed method. When a route allows more than one method, keep the choice between them explicit and readable.
 
 Preferred pattern:
 
 ```php
+/**
+ * Render the login form, or process a submitted one.
+ *
+ * Behavior:
+ * - POST goes to handleLoginSubmit(); GET and HEAD render the form.
+ *
+ * @return void
+ */
 public function login(): void {
-	$method = $this->app->request->method();
-
-	if ($method === 'GET') {
+	// Assumes the route allows GET and POST; the Router rejects every other method.
+	if ($this->app->request->method() !== 'POST') {
 		$this->renderLoginForm();
 		return;
 	}
 
-	if ($method === 'POST') {
-		$this->handleLoginSubmit();
-		return;
-	}
-
-	$this->app->errorHandler->httpError(405, [
-		'message' => 'Method not allowed.',
-	]);
+	$this->handleLoginSubmit();
 }
 ```
 
@@ -1136,15 +1142,21 @@ Controllers often need a slightly different style for API-like endpoints.
 Typical JSON endpoint pattern:
 
 ```php
+/**
+ * Update a profile from a JSON request.
+ *
+ * UpdateProfile makes the decision. This action checks that the body is a JSON object and
+ * translates the Operation's result to JSON.
+ *
+ * Behavior:
+ * - 400 problem document unless the body is a JSON object.
+ * - 422 with {"ok": false, "message": ...} when UpdateProfile refuses.
+ * - 200 with {"ok": true, "message": ...} when the profile was updated.
+ *
+ * @return void
+ * @see \App\Operation\UpdateProfile  The update decision.
+ */
 public function saveProfileApi(): void {
-	if ($this->app->request->method() !== 'POST') {
-		$this->app->response->jsonProblem(
-			'Method not allowed',
-			405,
-			'This endpoint only accepts POST.'
-		);
-	}
-
 	$payload = $this->app->request->json();
 
 	if (!\is_array($payload)) {
@@ -1156,7 +1168,7 @@ public function saveProfileApi(): void {
 	}
 
 	$operation = new \App\Operation\UpdateProfile($this->app);
-	$result = $operation->run([
+	$result = $operation->execute([
 		'name' => \trim((string)($payload['name'] ?? '')),
 		'phone' => \trim((string)($payload['phone'] ?? '')),
 	]);
@@ -1215,7 +1227,7 @@ Example:
 
 ```php
 $operation = new \App\Operation\AuthenticateUser($this->app);
-$result = $operation->run([
+$result = $operation->execute([
 	'identifier' => $identifier,
 	'password' => $password,
 	'ip' => $this->app->request->ip(),
@@ -1382,20 +1394,18 @@ final class AuthController extends BaseController {
 	 * runs the Operation and starts the authenticated session on success.
 	 *
 	 * Behavior:
-	 * - GET renders the form.
+	 * - GET and HEAD render the form.
 	 * - A POST with an empty field, or one that AuthenticateUser refuses, renders the form again
 	 *   with an error and the entered identifier, marked no-cache.
 	 * - An accepted POST stores user_id in a regenerated session, adds a success flash and
 	 *   redirects to /member/.
-	 * - Any other method answers 405 through httpError().
 	 *
 	 * @return void
 	 * @see \App\Operation\AuthenticateUser  The authentication decision.
 	 */
 	public function login(): void {
-		$method = $this->app->request->method();
-
-		if ($method === 'GET') {
+		// Assumes the route allows GET and POST; the Router rejects every other method.
+		if ($this->app->request->method() !== 'POST') {
 			$this->app->tplEngine->render(
 				$this->routeConfig['template_file'] . '@' . $this->routeConfig['template_layer'],
 				[
@@ -1403,12 +1413,6 @@ final class AuthController extends BaseController {
 				]
 			);
 			return;
-		}
-
-		if ($method !== 'POST') {
-			$this->app->errorHandler->httpError(405, [
-				'message' => 'Method not allowed.',
-			]);
 		}
 
 		$data = $this->app->request->only(['identifier', 'password'], 'post');
@@ -1431,7 +1435,7 @@ final class AuthController extends BaseController {
 		}
 
 		$operation = new AuthenticateUser($this->app);
-		$result = $operation->run([
+		$result = $operation->execute([
 			'identifier' => $identifier,
 			'password' => $password,
 			'ip' => $this->app->request->ip(),
@@ -1488,9 +1492,8 @@ final class ApiTokenController extends BaseController {
 	 *
 	 * Behavior:
 	 * - The request is checked in order, and the first failure answers with a problem document:
-	 *     1) 405 unless the method is POST.
-	 *     2) 415 unless the content type is application/json.
-	 *     3) 400 unless the body is a JSON object.
+	 *     1) 415 unless the content type is application/json.
+	 *     2) 400 unless the body is a JSON object.
 	 * - 422 with {"ok": false, "message": ...} when CreateApiToken refuses.
 	 * - 201 with {"ok": true, "token": ...} when the token was created.
 	 *
@@ -1498,14 +1501,6 @@ final class ApiTokenController extends BaseController {
 	 * @see \App\Operation\CreateApiToken  The token decision.
 	 */
 	public function create(): void {
-		if ($this->app->request->method() !== 'POST') {
-			$this->app->response->jsonProblem(
-				'Method not allowed',
-				405,
-				'This endpoint only accepts POST.'
-			);
-		}
-
 		if ($this->app->request->contentType() !== 'application/json') {
 			$this->app->response->jsonProblem(
 				'Unsupported media type',
@@ -1525,7 +1520,7 @@ final class ApiTokenController extends BaseController {
 		}
 
 		$operation = new CreateApiToken($this->app);
-		$result = $operation->run([
+		$result = $operation->execute([
 			'label' => \trim((string)($payload['label'] ?? '')),
 			'ip' => $this->app->request->ip(),
 		]);
@@ -1564,30 +1559,36 @@ use App\Repository\InvoiceRepository;
 final class InvoiceController extends BaseController {
 
 	/**
-	 * Download a generated invoice PDF.
+	 * Download one of the signed-in user's invoice PDFs.
 	 *
 	 * Behavior:
-	 * - 404 through httpError() when the id is below 1 or the invoice has no file.
+	 * - 404 through httpError() when no user is signed in, the id is below 1, or the invoice is
+	 *   missing or belongs to another user.
 	 * - Otherwise sends the file as invoice-{id}.pdf.
 	 *
 	 * @return void
+	 * @see \App\Repository\InvoiceRepository::findFilePathForOwner()  The owner-scoped lookup.
 	 */
 	public function download(): void {
+		$userId = (int)$this->app->session->get('user_id');
 		$invoiceId = (int)$this->app->request->input('id', 0, 'get');
 
-		if ($invoiceId < 1) {
+		// A missing session also answers 404, so the endpoint does not reveal which invoices exist.
+		if ($userId < 1 || $invoiceId < 1) {
 			$this->app->errorHandler->httpError(404, [
 				'message' => 'Invoice not found.',
 			]);
+			return;
 		}
 
-		$repo = new InvoiceRepository($this->app);
-		$file = $repo->getInvoiceFilePath($invoiceId);
+		// Assumes the lookup is scoped to the owner, so another user's invoice comes back as null.
+		$file = (new InvoiceRepository($this->app))->findFilePathForOwner($invoiceId, $userId);
 
-		if ($file === '') {
+		if ($file === null) {
 			$this->app->errorHandler->httpError(404, [
-				'message' => 'Invoice file not found.',
+				'message' => 'Invoice not found.',
 			]);
+			return;
 		}
 
 		$this->app->response->download($file, 'invoice-' . $invoiceId . '.pdf');
@@ -1613,21 +1614,17 @@ final class AuthController extends BaseController {
 	/**
 	 * Sign the user out and redirect to the login page.
 	 *
-	 * POST only, so that a link or a prefetch cannot sign the user out.
+	 * Ends the authenticated session and forgets the remember-me login on this browser.
 	 *
 	 * Behavior:
-	 * - 405 through httpError() unless the method is POST.
-	 * - Otherwise deletes the remember_token cookie, destroys the session and redirects to /login/.
+	 * - Deletes the remember_token cookie, destroys the session and redirects to /login/.
+	 *
+	 * Notes:
+	 * - Route it for POST only, so that a link or a prefetch cannot sign the user out.
 	 *
 	 * @return void
 	 */
 	public function logout(): void {
-		if ($this->app->request->method() !== 'POST') {
-			$this->app->errorHandler->httpError(405, [
-				'message' => 'Method not allowed.',
-			]);
-		}
-
 		$this->app->cookie->delete('remember_token', [
 			'path' => '/',
 		]);
@@ -1769,7 +1766,7 @@ Example:
 
 ```php
 try {
-	$result = $operation->run($payload);
+	$result = $operation->execute($payload);
 } catch (\InvalidArgumentException $e) {
 	$this->app->response->jsonStatus([
 		'ok' => false,
