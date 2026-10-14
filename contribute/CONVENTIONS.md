@@ -313,6 +313,7 @@ The [CitOmni Code Documentation Guide](./code-documentation-guide.md) defines ho
 - **Contract in PHPDoc, rationale inline.** PHPDoc states what a caller can rely on. An inline comment explains why a specific line looks the way it does, and may state an assumption the code relies on.
 - **Class PHPDoc** states the class's role, its purpose and scope, and rules that every present and future member must meet. It does not summarize or list members.
 - **Method PHPDoc** states observable outcomes and guarantees, not steps. Every method has `@param` and `@return`, except that constructors and destructors have no `@return`; `@throws` lists contractual exceptions; `@see` replaces copied behavior.
+- **Constants, enum cases and properties** each get a one-line PHPDoc that states what the value means. Every value key in a cfg baseline gets a comment on what it controls.
 - **Section dividers** mark structure, such as groups of members or phases in a method, not length.
 
 ---

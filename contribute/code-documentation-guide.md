@@ -224,9 +224,9 @@ Every parameter still gets `@param`, promoted ones included, also when the const
 	public function __construct(App $app) {
 ```
 
-## Constants and properties
+## Constants, enum cases and properties
 
-A single-line PHPDoc states what the value means, not where it is used:
+Every constant, enum case and declared property gets a one-line PHPDoc. It states what the value means, not where it is used:
 
 ```php
 	/** Maximum number of articles in each list. */
@@ -234,6 +234,31 @@ A single-line PHPDoc states what the value means, not where it is used:
 ```
 
 A list of users goes stale with the next new user. A search finds them.
+
+A promoted constructor property is covered by the constructor's `@param`.
+
+## Cfg baselines
+
+A cfg baseline is the home of its keys' meaning, as [The owner documents](#the-owner-documents) says. Every key that holds a value gets a comment; a key that only groups other keys needs none.
+
+- State what the value controls, its unit when it has one, and the accepted values when the type does not make them obvious.
+- Put the comment at the end of the line, or above the key when it needs more than one line.
+- An entry in another package's cfg structure, such as a template variable, gets one comment on what it provides. The keys of that structure belong to their owner.
+- An app cfg file documents the keys it defines. When it overrides a package key, it does not repeat the meaning; a comment says why the app deviates, when that is not evident.
+
+Example, from [citomni/demo-provider](https://github.com/citomni/demo-provider/blob/main/src/Boot/Registry.php):
+
+```php
+	/** Cfg baseline for both modes. */
+	public const array CFG_COMMON = [
+		'demo_provider' => [
+			'notices' => [
+				'max_visible'   => 3,   // Maximum number of current notices that visitors see at once.
+				'max_lead_days' => 90,  // How many days ahead a notice may start.
+			],
+		],
+	];
+```
 
 ## Lists in PHPDoc
 
@@ -284,6 +309,7 @@ Place an explanation, when needed, as a normal comment directly below the divide
 - [ ] The class PHPDoc states role, purpose and scope, and rules. It has no member summaries or lists.
 - [ ] Every method PHPDoc has a summary, a description where it is mandatory, and Behavior as outcomes rather than steps.
 - [ ] Every method has `@param` and `@return`, except that constructors and destructors have no `@return`; `@throws` covers contractual exceptions; `@see` replaces copied behavior.
+- [ ] Every constant, enum case and declared property has a one-line PHPDoc, and every value key in a cfg baseline has a comment.
 - [ ] Rationale sits inline at the line it explains, and assumptions are stated as assumptions.
 - [ ] Dividers mark distinct groups of members or phases, not length.
 - [ ] Nested lists use 4 spaces, and numbers mark order only.
