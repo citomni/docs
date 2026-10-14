@@ -139,7 +139,7 @@ A method PHPDoc does not repeat the class's Rules.
 ### Tags
 
 - **`@param`** for every parameter. Describe only what the type does not say: Range, format, unit or shape.
-- **`@return`** always, including `void` and `never`. Describe only what the type does not say. Give arrays a shape.
+- **`@return`** always, including `void` and `never`, except on constructors and destructors. Describe only what the type does not say. Give arrays a shape.
 - **`@throws`** for every exception that is part of the contract and can escape:
     - precondition violations,
     - documented failures,
@@ -204,6 +204,26 @@ A method that changes state and has several outcomes gets a description and a fu
 	 */
 ```
 
+### Constructors
+
+Constructors follow the method rules, with three differences:
+
+- **No `@return`.** PHP forbids a return type on `__construct()`, and the caller gets the object from `new`, not from the constructor. The same goes for `__destruct()`.
+- **Own properties are not state changes.** Setting the object's own properties does not make the description mandatory, so most constructors need only the summary and the tags.
+- **No Typical usage.** How a class is instantiated belongs to the layer conventions.
+
+Every parameter still gets `@param`, promoted ones included, also when the constructor only stores its parameters. `@throws` follows the method rules.
+
+```php
+	/**
+	 * Read the app's timezone.
+	 *
+	 * @param  App  $app  App whose cfg may hold locale.timezone.
+	 * @throws \DateInvalidTimeZoneException  When cfg locale.timezone is not a valid timezone.
+	 */
+	public function __construct(App $app) {
+```
+
 ## Constants and properties
 
 A single-line PHPDoc states what the value means, not where it is used:
@@ -263,7 +283,7 @@ Place an explanation, when needed, as a normal comment directly below the divide
 - [ ] No statement can be made false by a diff that does not touch its element.
 - [ ] The class PHPDoc states role, purpose and scope, and rules. It has no member summaries or lists.
 - [ ] Every method PHPDoc has a summary, a description where it is mandatory, and Behavior as outcomes rather than steps.
-- [ ] Every method has `@param` and `@return`; `@throws` covers contractual exceptions; `@see` replaces copied behavior.
+- [ ] Every method has `@param` and `@return`, except that constructors and destructors have no `@return`; `@throws` covers contractual exceptions; `@see` replaces copied behavior.
 - [ ] Rationale sits inline at the line it explains, and assumptions are stated as assumptions.
 - [ ] Dividers mark distinct groups of members or phases, not length.
 - [ ] Nested lists use 4 spaces, and numbers mark order only.
