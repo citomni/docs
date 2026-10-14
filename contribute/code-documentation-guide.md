@@ -233,7 +233,16 @@ A list of users goes stale with the next new user. A search finds them.
 
 - Do not repeat what the next line says.
 
-Section dividers are optional and only for code long enough that visual separation helps. Between groups of methods, use a class-level divider indented one tab:
+## Section dividers
+
+Dividers mark structure, not length. Use them when code has distinct parts that a reader needs to find:
+
+- Groups of members in a class with different roles, such as the public API and internal helpers, or families of related methods.
+- Phases in a method that run in order, such as checking, validating and storing.
+
+A long method that does one linear thing gets no dividers, and neither does a short method without phases. Many branches are not a reason either, because dividers do not make branching easier to follow.
+
+Between groups of members, use a class-level divider indented one tab:
 
 ```php
 	// ----------------------------------------------------------------
@@ -241,7 +250,7 @@ Section dividers are optional and only for code long enough that visual separati
 	// ----------------------------------------------------------------
 ```
 
-Inside a method with distinct phases, use a numbered single-line divider indented to the surrounding code:
+Inside a method, number the phases with single-line dividers indented to the surrounding code. The numbers state the order:
 
 ```php
 		// -- 1. Validate input -----------------------------------------
@@ -256,6 +265,7 @@ Place an explanation, when needed, as a normal comment directly below the divide
 - [ ] Every method PHPDoc has a summary, a description where it is mandatory, and Behavior as outcomes rather than steps.
 - [ ] Every method has `@param` and `@return`; `@throws` covers contractual exceptions; `@see` replaces copied behavior.
 - [ ] Rationale sits inline at the line it explains, and assumptions are stated as assumptions.
+- [ ] Dividers mark distinct groups of members or phases, not length.
 - [ ] Nested lists use 4 spaces, and numbers mark order only.
 - [ ] Text is plain ASCII.
 
