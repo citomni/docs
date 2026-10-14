@@ -27,7 +27,7 @@
    final class Registry { public const MAP_HTTP = [...]; ... }
    ```
 
-3. **Constants exist** - `Registry` actually defines `CFG_*`, `ROUTES_*`, `MAP_*` as **public const arrays**.
+3. **Constants exist** - `Registry` actually defines the constants it needs (`CFG_*`, `MAP_*`, `ROUTES_HTTP`, `COMMANDS_CLI`) as **public const arrays**.
 
 4. **Composer autoload** - Autoloader knows about the package:
 
@@ -62,8 +62,9 @@
 | Symptom                                                                | Likely Cause                                                                                | Fix                                                                                                                                                                                                                        | 
 | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `RuntimeException: Provider class not found: Vendor\Pkg\Boot\Registry` | Wrong FQCN in `/config/providers.php`, wrong **path or namespace**, or autoload not rebuilt | Ensure file path & `namespace Vendor\Pkg\Boot;`, then `composer dump-autoload -o`. Verify with `class_exists()` (see §0).                                                                                                  |
-| "Nothing from my provider shows up"                                    | You defined the **old** `Provider/Services.php` or `Boot/Services.php` only                 | **Migrate** to `src/Boot/Registry.php` with `CFG_*`, `ROUTES_*`, `MAP_*`. Add Registry FQCN to `providers.php`.                                                                                                            |
+| "Nothing from my provider shows up"                                    | You defined the **old** `Provider/Services.php` or `Boot/Services.php` only                 | **Migrate** to `src/Boot/Registry.php` with `CFG_*`, `MAP_*`, `ROUTES_HTTP`, `COMMANDS_CLI`. Add Registry FQCN to `providers.php`.                                                                                                            |
 | Routes aren't applied                                                  | You put routes in config or wrong constant name                                             | Use `public const ROUTES_HTTP = [...]` (path-keyed). Re-warm **routes** cache.                                                                                                                                             |
+| CLI commands from a provider are missing | You used `ROUTES_CLI` or another constant name the kernel does not read; unknown constants are ignored without an error | Use `public const COMMANDS_CLI = [...]` (keyed by command name). Re-warm the **commands** cache (`var/cache/commands.cli.php`). |
 | Services override doesn't work                                         | Wrong **merge mental model**                                                                | **Services use left-wins per step**. Kernel does `$map = $pvMap + $map;` for each provider **in order** -> **later providers override earlier ones**. The **app** runs last: `$map = $appMap + $map;` -> app wins overall. |
 | Config overrides don't stick                                           | Using list arrays or wrong files                                                            | **Config is deep last-wins.** Ensure you override with associative keys in `/config/citomni_{http or cli}_cfg.php`(and optional`{ENV}` file).                                                                              |
 | Changes don't appear in prod                                           | Stale caches / OPcache                                                                      | Re-warm caches & invalidate OPcache (`opcache_invalidate()` per file or `opcache_reset()`), then hard-reload.                                                                                                              |
@@ -91,7 +92,9 @@ final class Registry {
   // Mirrors (optional)
   // public const CFG_CLI = [...];
   // public const MAP_CLI = [...];
-  // public const ROUTES_CLI = [...]; // rarely needed
+
+  // CLI dispatch (optional)
+  // public const COMMANDS_CLI = [ /* command-name-keyed, last-wins */ ];
 }
 ```
 
@@ -99,6 +102,7 @@ final class Registry {
 
 * **Config:** deep **last-wins** across layers.
 * **Routes:** by path key, **last-wins** across layers.
+* **Commands:** by command name, **last-wins** across layers.
 * **Services:** **left-wins per merge step**, but the kernel applies:
 
   1. Baseline -> `$map`
@@ -250,8 +254,9 @@ If your provider's IDs are missing, go back to §0 (autoload & FQCN).
 | ----------------------------------------------------- | ------------------------------------------------------------------ |
 | `src/Provider/Services.php`                           | `src/Boot/Registry.php`                                            |
 | `namespace Vendor\Pkg\Provider; final class Services` | `namespace Vendor\Pkg\Boot; final class Registry`                  |
-| `MAP_HTTP`, `CFG_HTTP` on *Services.php*              | Put **all** `CFG_*`, `ROUTES_*`, `MAP_*` on **Registry**           |
+| `MAP_HTTP`, `CFG_HTTP` on *Services.php*              | Put **all** `CFG_*`, `MAP_*`, `ROUTES_HTTP`, `COMMANDS_CLI` on **Registry** |
 | Implicit route ingestion                              | **Always** `ROUTES_HTTP` (path-keyed, last-wins)                   |
+| CLI `ROUTES_CLI`                                      | `COMMANDS_CLI` (command-name-keyed, last-wins)                     |
 | Unclear precedence for services                       | **Authoritative**: later providers override earlier, app wins last |
 
 **Before (legacy)**

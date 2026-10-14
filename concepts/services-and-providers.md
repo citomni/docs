@@ -21,7 +21,7 @@
 CitOmni's core distinguishes two **runtime modes** - HTTP and CLI. Providers may target either or both, contributing:
 - **Service maps** (IDs -> classes) for dependency resolution
 - **Configuration overlays** (deep, associative, last-wins)
-- **Routes** (HTTP/CLI), exposed via `ROUTES_{HTTP|CLI}` constants (read by `App::buildRoutes()`)
+- **Dispatch maps**: HTTP routes via `ROUTES_HTTP` (read by `App::buildRoutes()`) and CLI commands via `COMMANDS_CLI` (read by `App::buildCommands()`)
 
 Providers intentionally **do not** own baseline configuration; baseline is owned only by the mode packages `citomni/http` and `citomni/cli`. Providers *overlay* that baseline.
 
@@ -33,11 +33,11 @@ Providers intentionally **do not** own baseline configuration; baseline is owned
 - **Deterministic boot:** merge constant arrays; zero code execution during merge.
 - **Low overhead:** no filesystem probing, no DI containers, no reflection, no autowiring.
 - **Predictable precedence:** vendor baseline -> providers -> app base -> app environment overlay.
-- **Minimal surface:** a single class `Boot/Registry.php` with up to six constants is sufficient for most providers:
-  `CFG_HTTP`, `CFG_CLI`, `MAP_HTTP`, `MAP_CLI`, `ROUTES_HTTP`, and `ROUTES_CLI`.
+- **Minimal surface:** a single class `Boot/Registry.php` with up to eight constants is sufficient for most providers:
+  `CFG_COMMON`, `CFG_HTTP`, `CFG_CLI`, `MAP_COMMON`, `MAP_HTTP`, `MAP_CLI`, `ROUTES_HTTP`, and `COMMANDS_CLI`.
   
-Each constant is read directly by one of the kernel's three deterministic builders:
-`App::buildConfig()`, `App::buildRoutes()`, or `App::buildServices()`.
+Each constant is read directly by one of the kernel's four deterministic builders:
+`App::buildConfig()`, `App::buildRoutes()` (HTTP), `App::buildCommands()` (CLI), or `App::buildServices()`.
 
 
 ### 2.2 Non-Goals
@@ -49,9 +49,9 @@ Each constant is read directly by one of the kernel's three deterministic builde
 
 ## 3. How Providers Integrate
 
-The kernel (`citomni/kernel`) composes **configuration, routes, and services** via a deterministic pipeline.
+The kernel (`citomni/kernel`) composes **configuration, dispatch maps, and services** via a deterministic pipeline.
 
-> See `App::buildConfig()`, `App::buildRoutes()`, and `App::buildServices()` for exact resolution logic.
+> See `App::buildConfig()`, `App::buildRoutes()`, `App::buildCommands()`, and `App::buildServices()` for exact resolution logic.
 
 ### 3.1 Configuration Merge (deep, last-wins)
 
@@ -67,19 +67,23 @@ Mechanics:
 - Associative arrays are merged recursively (**last-wins**).
 - List arrays (PHP "lists") are **replaced** (not concatenated).
 
-### 3.1b Routes Merge (path-keyed, last-wins)
+### 3.1b Dispatch Map Merge (key-based, last-wins)
+
+HTTP dispatches routes; CLI dispatches commands. There is no `ROUTES_CLI`.
 
 Order:
 1. **Mode baseline**:
-   - HTTP -> `\CitOmni\Http\Boot\Routes::MAP`
-   - CLI  -> `\CitOmni\Cli\Boot\Routes::MAP`
-2. **Providers list** (`/config/providers.php`) -> each provider may contribute `ROUTES_HTTP` or `ROUTES_CLI`
-3. **App base** (`/config/citomni_{http|cli}_routes.php`)
-4. **App environment overlay** (`/config/citomni_{http|cli}_routes.{ENV}.php`)
+   - HTTP -> `\CitOmni\Http\Boot\Registry::ROUTES_HTTP`
+   - CLI  -> `\CitOmni\Cli\Boot\Registry::COMMANDS_CLI`
+2. **Providers list** (`/config/providers.php`) -> each provider may contribute `ROUTES_HTTP` (HTTP) and `COMMANDS_CLI` (CLI)
+3. **App base**: `/config/citomni_http_routes.php` (HTTP) or `/config/citomni_cli_commands.php` (CLI)
+4. **App environment overlay**: `/config/citomni_http_routes.{ENV}.php` (HTTP) or `/config/citomni_cli_commands.{ENV}.php` (CLI)
 
 Mechanics:
-- Routes are merged by **path key** with **last-wins** semantics.
-- Keep the map **associative by path**; list-style arrays are replaced wholesale downstream.
+- Routes are merged by **path key** and commands by **command name**, with **last-wins** semantics.
+- Keep both maps **associative by key**; list-style arrays are replaced wholesale downstream.
+
+> Full merge semantics: [Runtime modes, section 5.3](runtime-modes.md#53-dispatch-maps).
 
 ### 3.2 Service Map Merge (ID map, left-wins - deterministic override ladder)
 
@@ -139,8 +143,11 @@ final class Registry {
 		'foo' => ['enabled' => true],
 	];
 
-	public const ROUTES_CLI = [
-		// define CLI command routes if your CLI layer uses them
+	public const COMMANDS_CLI = [
+		'foo:sync' => [
+			'command'     => \Vendor\Package\Command\FooSyncCommand::class,
+			'description' => 'Synchronize foo data.',
+		],
 	];
 }
 ```
@@ -207,7 +214,7 @@ return [
 ### 4.2 Optional `Boot/Routes.php` holder
 
 If you insist on doing so; providers may keep route definitions in a separate constant holder for clarity and reuse.
-When present, reference it from `Boot/Registry` via `ROUTES_HTTP` / `ROUTES_CLI`.
+When present, reference it from `Boot/Registry` via `ROUTES_HTTP`.
 
 ```php
 <?php
@@ -262,7 +269,6 @@ final class Registry {
     // Mirror for CLI if applicable
     public const MAP_CLI    = self::MAP_HTTP;
     public const CFG_CLI    = ['auth' => ['enabled' => true]];
-    // public const ROUTES_CLI = \Vendor\Package\Boot\CliRoutes::MAP; // optional
 }
 ```
 
@@ -322,23 +328,26 @@ return [
 * **Existence:** Each class **must exist** (autoloadable) or boot fails fast.
 * **Surface:** A provider *may* define any of these **constants** on its `Boot\Registry`:
 
-  * `CFG_HTTP`, `CFG_CLI` - configuration overlays (deep, **last-wins**)
-  * `ROUTES_HTTP`, `ROUTES_CLI` - route overlays (path-keyed, **last-wins**)
-  * `MAP_HTTP`, `MAP_CLI` - service maps (ID-keyed, **left-wins per merge step**)
+  * `CFG_COMMON`, `CFG_HTTP`, `CFG_CLI` - configuration overlays (deep, **last-wins**)
+  * `ROUTES_HTTP` - HTTP route overlay (path-keyed, **last-wins**)
+  * `COMMANDS_CLI` - CLI command overlay (name-keyed, **last-wins**)
+  * `MAP_COMMON`, `MAP_HTTP`, `MAP_CLI` - service maps (ID-keyed, **left-wins per merge step**)
 * **Errors:** Non-strings, missing classes, or malformed constants are **fail-fast** - the kernel throws a `RuntimeException` during boot.
+* **Unknown constants:** The kernel reads only the constant names listed above. Any other constant on the class, such as `ROUTES_CLI`, is ignored without an error.
 
 ### 6.2 Deterministic Builders and Caches
 
-The kernel consumes provider constants through three **independent builders**, each producing an atomic cache:
+The kernel consumes provider constants through four **independent builders**. Each mode runs three of them (configuration, its own dispatch map, services), and each result has its own atomic cache file:
 
 | Builder                | Reads (by mode)                                                     | Merge rule                  | Cache file                             |
 | ---------------------- | ------------------------------------------------------------------- | --------------------------- | -------------------------------------- |
 | `App::buildConfig()`   | Baseline `Boot\Config::CFG` + providers `CFG_*` + app overlays      | **last-wins** (deep)        | `var/cache/cfg.{http or cli}.php`      |
-| `App::buildRoutes()`   | Baseline `Boot\Routes::MAP_*` + providers `ROUTES_*` + app overlays | **last-wins** (by path key) | `var/cache/routes.{http or cli}.php`   |
+| `App::buildRoutes()`   | HTTP only: baseline `ROUTES_HTTP` + providers `ROUTES_HTTP` + app overlays | **last-wins** (by path key) | `var/cache/routes.http.php` |
+| `App::buildCommands()` | CLI only: baseline `COMMANDS_CLI` + providers `COMMANDS_CLI` + app overlays | **last-wins** (by command name) | `var/cache/commands.cli.php` |
 | `App::buildServices()` | Baseline `Boot\Services::MAP` + providers `MAP_*` + app overrides   | **left-wins** (per step)    | `var/cache/services.{http or cli}.php` |
 
-Each builder operates independently and writes its own atomic cache file
-(`cfg`, `routes`, or `services`), ensuring side-effect-free startup.
+Each builder operates independently and returns a plain array; `App::warmCache()` writes each result to its own atomic cache file
+(`cfg`, `routes` or `commands`, and `services`), ensuring side-effect-free startup.
 
 > **Rule of thumb:**
 > **Configuration & routes** use **last-wins** (later overlays overwrite earlier keys).
@@ -361,12 +370,12 @@ The **order** in `/config/providers.php` defines overlay precedence **among prov
 
 * **Zero execution at boot:** The kernel **only reads constants**; no provider code is executed during merge.
 * **Atomic artifacts:** All three outputs are cached as pure `return [...]` arrays; safe for OPcache with `validate_timestamps=0`.
-* **Warm-up:** Use `App::warmCache()` to (re)generate `cfg`, `routes`, and `services` after changing providers or overlays.
+* **Warm-up:** Use `App::warmCache()` to (re)generate the cache files of the App's own mode (`cfg`, `routes` in HTTP or `commands` in CLI, and `services`) after changing providers or overlays.
 
 ### 6.5 Quick Checklist
 
 * [ ] `/config/providers.php` returns **FQCN strings** to `Boot\Registry` classes.
-* [ ] Providers expose **constants only** (`CFG_*`, `ROUTES_*`, `MAP_*`).
+* [ ] Providers expose **constants only** (`CFG_*`, `MAP_*`, `ROUTES_HTTP`, `COMMANDS_CLI`).
 * [ ] Understand precedence: **last-wins** (config/routes) vs **left-wins** (services).
 * [ ] Run **cache warm-up** after edits to providers or overlays.
 
@@ -434,8 +443,8 @@ final class Registry
         ],
     ];
 
-    // Define ROUTES_CLI only if the provider exposes CLI "routes" (rare):
-    // public const ROUTES_CLI = [...];
+    // Define COMMANDS_CLI only if the provider ships CLI commands:
+    // public const COMMANDS_CLI = [...];
 }
 ```
 
@@ -446,7 +455,8 @@ final class Registry
 * `CFG_HTTP` remains purely for configuration (no routes mixed in), which keeps merges clear:
 
   * `CFG_*` -> config tree
-  * `ROUTES_*` -> route table
+  * `ROUTES_HTTP` -> route table
+  * `COMMANDS_CLI` -> command table
   * `MAP_*` -> service map
 * App overlays can override any single route by re-declaring the same path key.
 
@@ -506,11 +516,11 @@ Each provider contributes to three orthogonal domains, none of which should be c
 | Layer             | Constant(s)                | Responsibility                                               | Typical contents                            |
 | ----------------- | -------------------------- | ------------------------------------------------------------ | ------------------------------------------- |
 | **Configuration** | `CFG_HTTP / CFG_CLI`       | Declarative defaults and policy parameters                   | guard names, role thresholds, CSRF settings |
-| **Routes**        | `ROUTES_HTTP / ROUTES_CLI` | Public contract: literal paths -> controller/action/method(s) | `.html`, `.json`, or action-only routes     |
+| **Dispatch**      | `ROUTES_HTTP / COMMANDS_CLI` | Public contract: literal paths -> controller/action/method(s) (HTTP); command names -> command class (CLI) | `.html`, `.json`, or action-only routes; command names such as `cache:warm` |
 | **Services**      | `MAP_HTTP / MAP_CLI`       | Concrete implementations of policies or utilities            | `auth`, `role`, `security`, `response`, ...   |
 
 This separation mirrors the kernel's independent build stages
-(`App::buildConfig()`, `App::buildRoutes()`, and `App::buildServices()`), each merged and cached deterministically.
+(`App::buildConfig()`, `App::buildRoutes()` or `App::buildCommands()`, and `App::buildServices()`), each merged and cached deterministically.
 
 ---
 
@@ -607,7 +617,7 @@ This approach preserves immutability and ensures all form endpoints operate unde
 
 #### 8.1.4 Declarative routes only
 
-Route maps (`ROUTES_HTTP / ROUTES_CLI`) must remain pure data structures.
+Dispatch maps (`ROUTES_HTTP / COMMANDS_CLI`) must remain pure data structures.
 They describe what the system *offers*, never how it behaves. Example:
 
 ```php
@@ -703,8 +713,8 @@ vendor/package
 ├─ composer.json
 └─ src
    ├─ Boot
-   ├─ Registry.php             (REQUIRED: exposes CFG_*, MAP_*, and optionally ROUTES_*)
-   ├─ Routes.php               (optional (but not best practice); define a MAP constant and reference it from Registry::ROUTES_*)
+   ├─ Registry.php             (REQUIRED: exposes CFG_*, MAP_*, and optionally ROUTES_HTTP / COMMANDS_CLI)
+   ├─ Routes.php               (optional (but not best practice); define a MAP constant and reference it from Registry::ROUTES_HTTP)
    ├─ Controller               (HTTP controllers)
    │  └─ *.php
    ├─ Command                  (CLI commands)
@@ -880,9 +890,9 @@ Declare **constants only**. This ensures zero-cost autoload and deterministic ca
 
 * **Constants, not code:** keep `Boot/Registry.php` (and, if used, `Boot/Routes.php`) purely declarative.
 * **Avoid heavy constructors:** defer external I/O (DB, HTTP calls) until needed.
-* **Exploit caches:** apps may pre-warm var/cache/cfg.{mode}.php, var/cache/routes.{mode}.php, and var/cache/services.{mode}.php; providers automatically benefit from all three deterministic caches.
+* **Exploit caches:** apps may pre-warm var/cache/cfg.{mode}.php, var/cache/routes.http.php (HTTP) or var/cache/commands.cli.php (CLI), and var/cache/services.{mode}.php; providers automatically benefit from all three deterministic caches.
 * **No global state:** use `$this->app` for runtime access; avoid static registries.
-* **Warmed caches are ABI:** Treat `var/cache/cfg.{mode}.php`, `var/cache/routes.{mode}.php`, and `var/cache/services.{mode}.php` as build artifacts.
+* **Warmed caches are ABI:** Treat `var/cache/cfg.{mode}.php`, `var/cache/routes.http.php` / `var/cache/commands.cli.php`, and `var/cache/services.{mode}.php` as build artifacts.
   Providers should be compatible with stale-until-replaced semantics; do not rely on runtime mutation of config structures.
 
 ---
@@ -988,8 +998,8 @@ final class Registry
         ],
     ];
 
-    // Define ROUTES_CLI only if you expose CLI "routes" (rare):
-    // public const ROUTES_CLI = [...];
+    // Define COMMANDS_CLI only if you ship CLI commands:
+    // public const COMMANDS_CLI = [...];
 }
 ```
 
@@ -1064,7 +1074,7 @@ All three participate in cache warming (`cfg`, `routes`, `services`) and respect
 ## 19. Quick Checklist for Provider Authors
 
 * [ ] PHP ≥ 8.2; PSR-4 autoload; classes in PascalCase; methods camelCase.
-* [ ] `src/Boot/Registry.php` exposing any of: `CFG_{HTTP|CLI}`, `MAP_{HTTP|CLI}`, `ROUTES_{HTTP|CLI}`.
+* [ ] `src/Boot/Registry.php` exposing any of: `CFG_{COMMON|HTTP|CLI}`, `MAP_{COMMON|HTTP|CLI}`, `ROUTES_HTTP`, `COMMANDS_CLI`.
 * [ ] Optional (but not best practice): `src/Boot/Routes.php` holding a `MAP` constant, referenced by `Boot/Registry`.
 * [ ] No `Boot/Config.php` (reserved for mode baselines).
 * [ ] Keep overlays associative; avoid lists unless full replacement is desired.
@@ -1073,7 +1083,7 @@ All three participate in cache warming (`cfg`, `routes`, `services`) and respect
 * [ ] Unit tests for service resolution and (if HTTP) route correctness.
 * [ ] Document stable service IDs for overrideability.
 * [ ] Changelog and SemVer for any public contract changes.
-* [ ] Run `App::warmCache()` to rebuild **cfg**, **routes**, and **services** caches.
+* [ ] Run `App::warmCache()` to rebuild **cfg**, **routes** (HTTP) or **commands** (CLI), and **services** caches.
 
 ---
 
@@ -1093,10 +1103,10 @@ All three participate in cache warming (`cfg`, `routes`, `services`) and respect
 Providers are **pure, declarative overlays** that enhance CitOmni applications with new capabilities while preserving determinism and performance. They:
 
 * Contribute **configuration**, **routes**, and **service IDs** via constants,
-* Are merged by `App::buildConfig()`, `App::buildRoutes()`, and `App::buildServices()` in a predictable order,
+* Are merged by `App::buildConfig()`, `App::buildRoutes()` or `App::buildCommands()`, and `App::buildServices()` in a predictable order,
 * Rely on a **minimal construction contract**,
 * Avoid runtime side effects and hidden magic,
-* Automatically participate in cache pre-warming (`cfg`, `routes`, `services`).
+* Automatically participate in cache pre-warming (`cfg`, `routes` or `commands`, `services`).
 
 **One philosophy:** explicit, deterministic, fast.
 **One pattern:** constants in, predictable behavior out.
