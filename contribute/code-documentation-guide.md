@@ -1,6 +1,6 @@
 # CitOmni Code Documentation Guide
 
-This guide defines how CitOmni code is documented in PHPDoc and inline comments. It applies to framework packages, providers and applications that follow the [CitOmni Coding & Documentation Conventions](https://github.com/citomni/.github/blob/main/CONVENTIONS.md).
+This guide defines how CitOmni code is documented in PHPDoc and inline comments. It applies to framework packages, providers and applications that follow the [CitOmni Coding & Documentation Conventions](./CONVENTIONS.md).
 
 Code documentation has two readers: Someone who changes the code, and someone who relies on it without reading the body. Either may be new to the code base, and either may be an AI session that sees nothing but the file. Every rule below serves one goal: Documentation that is true when it is written and stays true without separate maintenance.
 
@@ -271,8 +271,7 @@ Place an explanation, when needed, as a normal comment directly below the divide
 
 ## Related documents
 
-- [CitOmni Coding & Documentation Conventions](https://github.com/citomni/.github/blob/main/CONVENTIONS.md)
-- [CONVENTIONS (entry point)](./CONVENTIONS.md)
+- [CitOmni Coding & Documentation Conventions](./CONVENTIONS.md)
 - [CitOmni Testing Guide](./testing-guide.md)
 - [PSR-5: PHPDoc (draft)](https://github.com/php-fig/fig-standards/blob/master/proposed/phpdoc.md)
 - [PSR-19: PHPDoc tags (draft)](https://github.com/php-fig/fig-standards/blob/master/proposed/phpdoc-tags.md)
