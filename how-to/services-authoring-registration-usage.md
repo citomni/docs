@@ -1164,33 +1164,9 @@ When deploying with aggressive OPcache settings, invalidate changed cache files 
 
 ## 20) Testing a Service
 
-Services can be tested with a real `App` and fixture config:
+A test may construct a Service directly with an `App` and the options under test, such as `new \Vendor\Package\Service\Greeter($app, ['suffix' => '- from Test'])`. This is one of the few places where direct construction is acceptable: You are testing the class contract itself.
 
-```php
-public function testGreeter(): void {
-	$app = new \CitOmni\Kernel\App(
-		__DIR__ . '/../_fixtures/config',
-		\CitOmni\Kernel\Mode::HTTP
-	);
-
-	$service = new \Vendor\Package\Service\Greeter($app, [
-		'suffix' => '- from Test',
-	]);
-
-	$this->assertSame('Hello, Bob - from Test', $service->greet('Bob'));
-}
-```
-
-This is one of the few places where direct construction is acceptable: You are testing the class contract itself.
-
-For integration tests, prefer resolving through the app:
-
-```php
-$this->assertSame(
-	'Hello, Bob - from Test',
-	$app->greeter->greet('Bob')
-);
-```
+For integration tests, prefer resolving through the app, such as `$app->greeter`.
 
 Test guidance:
 
@@ -1198,6 +1174,8 @@ Test guidance:
 * Do not rely on route data unless the service explicitly needs routing.
 * Prefer testing service behavior, not boot internals.
 * Keep tests deterministic and file-system-light.
+
+Write the checks as standalone suites under `tests/`, as described in the [CitOmni Testing Guide](../contribute/testing-guide.md).
 
 ---
 

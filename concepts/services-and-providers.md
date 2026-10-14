@@ -711,7 +711,7 @@ vendor/package
    │  └─ *.php
    ├─ Service
    │  └─ *.php
-   ├─ Model
+   ├─ Repository
    │  └─ *.php
    └─ Exception
       └─ *.php
@@ -726,7 +726,7 @@ vendor/package
   "type": "library",
   "license": "GPL-3.0-or-later",
   "require": {
-    "php": ">=8.2",
+    "php": "^8.5",
     "citomni/kernel": "^1.0"
   },
   "autoload": {
@@ -745,7 +745,7 @@ vendor/package
   "description": "CitOmni provider: Foo capabilities",
   "type": "library",
   "license": "GPL-3.0-or-later",
-  "keywords": ["citomni", "provider", "php8.2"],
+  "keywords": ["citomni", "provider", "php85"],
   "authors": [
     {
       "name": "Lars Grove Mortensen",
@@ -757,11 +757,10 @@ vendor/package
     "source": "https://github.com/vendor/package"
   },
   "require": {
-    "php": ">=8.2",
+    "php": "^8.5",
     "citomni/kernel": "^1.0"
   },
   "require-dev": {
-    "phpunit/phpunit": "^11.0",
     "phpstan/phpstan": "^1.11"
   },
   "autoload": {
@@ -779,22 +778,17 @@ vendor/package
     "sort-packages": true
   },
   "scripts": {
-    "test": "phpunit",
+    "test": "@php tests/run.php",
     "stan": "phpstan analyse --memory-limit=512M"
   }
 }
 ```
 
-**Namespaces (PSR-4):** map `Vendor\\Package\\` -> `src/` and use
-`Vendor\Package\Controller\*`, `Vendor\Package\Command\*`, `Vendor\Package\Service\*`,
-`Vendor\Package\Model\*`, `Vendor\Package\Exception\*`.
+**Namespaces (PSR-4):** map `Vendor\\Package\\` -> `src/`. Each layer folder under `src/` is a namespace of its own, such as `Vendor\Package\Repository\*`. See [Complete Layout: Provider Packages](architecture.md#complete-layout-provider-packages) for the layers a provider can have.
 
-**Coding conventions (CitOmni standard):**
-* PHP >= 8.2; PSR-4 autoload.
-* Classes: PascalCase; methods/variables: camelCase; constants: UPPER_SNAKE_CASE.
-* K&R brace style (opening brace on the same line).
-* Tabs for indentation.
-* All PHPDoc and inline comments in English.
+**Tests:** `composer test` runs `tests/run.php`, the aggregate runner from the [CitOmni Testing Guide](../contribute/testing-guide.md).
+
+**Coding conventions:** See [CitOmni Coding & Documentation Conventions](../contribute/CONVENTIONS.md).
 
 ### 11.1 Composer Dependencies (mode-aware)
 
@@ -803,7 +797,7 @@ Most providers should depend on `citomni/kernel` plus the mode package(s) they t
 - If the provider **requires HTTP runtime features** (e.g., controllers, routes), add `"citomni/http": "^1.0"`.
 - If the provider **requires CLI runtime features** (e.g., commands), add `"citomni/cli": "^1.0"`.
 - If the provider **requires both**, require **both** packages.
-- If the provider is **runtime-agnostic** (pure services/models with no HTTP/CLI coupling), `"citomni/kernel"` alone is sufficient.
+- If the provider is **runtime-agnostic** (no Controllers, Commands or other HTTP/CLI coupling), `"citomni/kernel"` alone is sufficient.
 - Keep **only** the dependencies that are actually necessary (minimize surface and installation footprint).
 
 **Examples**
@@ -812,7 +806,7 @@ HTTP-only:
 ```json
 {
   "require": {
-    "php": ">=8.2",
+    "php": "^8.5",
     "citomni/kernel": "^1.0",
     "citomni/http": "^1.0"
   }
@@ -824,7 +818,7 @@ CLI-only:
 ```json
 {
   "require": {
-    "php": ">=8.2",
+    "php": "^8.5",
     "citomni/kernel": "^1.0",
     "citomni/cli": "^1.0"
   }
@@ -836,7 +830,7 @@ Both modes:
 ```json
 {
   "require": {
-    "php": ">=8.2",
+    "php": "^8.5",
     "citomni/kernel": "^1.0",
     "citomni/http": "^1.0",
     "citomni/cli": "^1.0"
@@ -849,7 +843,7 @@ Runtime-agnostic:
 ```json
 {
   "require": {
-    "php": ">=8.2",
+    "php": "^8.5",
     "citomni/kernel": "^1.0"
   }
 }

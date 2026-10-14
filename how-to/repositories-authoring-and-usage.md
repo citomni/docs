@@ -1391,19 +1391,6 @@ final class ResetPassword extends BaseOperation {
 
 Repositories are straightforward to test because they use an explicit constructor and a narrow dependency model.
 
-Example:
-
-```php
-public function testFindAuthRowByEmailReturnsRow(): void {
-	$app  = new \CitOmni\Kernel\App(__DIR__ . '/../_fixtures/config', \CitOmni\Kernel\Mode::HTTP);
-	$repo = new \Vendor\Package\Repository\UserRepository($app);
-
-	$row = $repo->findAuthRowByEmail('alice@example.com');
-
-	$this->assertSame('alice@example.com', $row['email']);
-}
-```
-
 Repository tests should focus on:
 
 * correct SQL behavior,
@@ -1412,6 +1399,8 @@ Repository tests should focus on:
 * invalid input handling.
 
 They should not test transport behavior.
+
+SQL behavior and return shapes can only be checked against a real database, so those checks belong in a `database.php` suite. A guard that rejects input before any query runs can be checked in an isolated `run.php` suite. The [CitOmni Testing Guide](../contribute/testing-guide.md) defines both suite types, the test database connection, and the disposable database each run creates. [`tests/notices/database.php`](https://github.com/citomni/demo-provider/blob/main/tests/notices/database.php) in citomni/demo-provider tests a Repository this way.
 
 ---
 

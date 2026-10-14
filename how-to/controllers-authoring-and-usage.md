@@ -1816,33 +1816,11 @@ Typical approaches:
 * Instantiate a Controller with a real or fixture-backed `App`
 * Provide a route config array
 * Populate request globals or use test bootstrapping that does so
-* Assert on response side effects, rendered output, headers, redirects, JSON payloads, or error behavior
-
-Example:
-
-```php
-public function testWebsiteLicensePageRenders(): void {
-	$app = new \CitOmni\Kernel\App(
-		__DIR__ . '/../_fixtures/config',
-		\CitOmni\Kernel\Mode::HTTP
-	);
-
-	$routeConfig = [
-		'controller' => \App\Http\Controller\PublicController::class,
-		'action' => 'websiteLicense',
-	];
-
-	$controller = new \App\Http\Controller\PublicController($app, $routeConfig);
-
-	\ob_start();
-	$controller->websiteLicense();
-	$output = \ob_get_clean();
-
-	$this->assertIsString($output);
-}
-```
+* Check response side effects, rendered output, headers, redirects, JSON payloads, or error behavior
 
 For reusable logic, prefer extracting into Services or Operations and testing those directly. Controller tests should focus on boundary behavior.
+
+Write the checks as a standalone suite under `tests/`. The [CitOmni Testing Guide](../contribute/testing-guide.md) defines the suite layout, the reporting format, and the aggregate runner.
 
 ---
 

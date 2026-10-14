@@ -279,20 +279,9 @@ return [
 
 ## 14. Testing Guidance
 
-Use the Kernel to construct a minimal HTTP app for tests, then instantiate the service with the standard service contract:
+Flash keeps all of its state in the `session` service, so a test needs an `App` that provides `session`. Instantiate the service with the standard service contract, `new \CitOmni\Http\Service\Flash($app, [])`, and check its public behavior. For example, a message added with `success()` comes back in `pullAll()['msg']['success']`, and `peekAll()['msg']` is empty afterwards.
 
-```php
-public function testFlashSetAndPull(): void {
-	$app = new \CitOmni\Kernel\App(__DIR__ . '/_fixtures/config', \CitOmni\Kernel\Mode::HTTP);
-	$flash = new \CitOmni\Http\Service\Flash($app, []);
-
-	$flash->success('Hello');
-	$out = $flash->pullAll();
-
-	$this->assertSame('Hello', $out['msg']['success'][0] ?? null);
-	$this->assertSame([], $flash->peekAll()['msg'] ?? []); // cleared on pullAll()
-}
-```
+Write the checks as a standalone suite under `tests/`, as described in the [CitOmni Testing Guide](../contribute/testing-guide.md).
 
 > Tests should **not** rely on implicit globals; drive everything through Services (`Session`, `Response`, etc.) to keep them hermetic. 
 
