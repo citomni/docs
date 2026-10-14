@@ -1306,6 +1306,8 @@ The action name should be understandable without opening the method body.
 
 ## 28) Controller class skeleton
 
+The PHPDoc follows the [Code Documentation Guide](../contribute/code-documentation-guide.md).
+
 ```php
 <?php
 declare(strict_types=1);
@@ -1315,35 +1317,26 @@ namespace App\Http\Controller;
 use CitOmni\Kernel\Controller\BaseController;
 
 /**
- * AccountController: HTTP adapter for account-related routes.
+ * AccountController: HTTP adapter for account pages.
  *
- * Handles request parsing, HTTP-bound validation, access control decisions,
- * and response shaping for account pages and account mutations.
+ * Turns account reads and account workflows into HTTP responses. It owns transport only,
+ * from request input to response shaping.
  *
- * Behavior:
- * - Reads request input and normalizes it into predictable scalar values.
- * - Delegates trivial persistence work directly to Repositories.
- * - Delegates non-trivial workflows to Operations.
- * - Shapes HTTP output through templates, redirects, JSON, or httpError().
- *
- * Notes:
- * - This class is transport-specific by design.
- * - Do not place SQL or multi-step domain orchestration here.
- *
- * Typical usage:
- *   Routed via explicit route definitions using:
- *   'controller' => \App\Http\Controller\AccountController::class
+ * Rules:
+ * - Read through Repositories for trivial persistence; run anything non-trivial through Operations.
+ * - No SQL and no multi-step domain orchestration.
  */
 final class AccountController extends BaseController {
 
 	/**
-	 * One-time per-instance initialization.
+	 * Run setup and guards that every action needs.
 	 *
-	 * Behavior:
-	 * - Reads cheap route-local metadata if needed.
-	 * - Must remain deterministic and low-overhead.
+	 * Notes:
+	 * - Holds no access guard, so each action is exactly as exposed as its route. A guard added
+	 *   here applies to every action.
 	 *
 	 * @return void
+	 * @see \CitOmni\Kernel\Controller\BaseController::__construct()  Calls it before every action.
 	 */
 	protected function init(): void {
 	}
@@ -1383,9 +1376,21 @@ use App\Operation\AuthenticateUser;
 final class AuthController extends BaseController {
 
 	/**
-	 * Render or process the login form.
+	 * Render the login form, or process it and sign the user in.
+	 *
+	 * AuthenticateUser makes the decision. This action checks that both fields are filled in,
+	 * runs the Operation and starts the authenticated session on success.
+	 *
+	 * Behavior:
+	 * - GET renders the form.
+	 * - A POST with an empty field, or one that AuthenticateUser refuses, renders the form again
+	 *   with an error and the entered identifier, marked no-cache.
+	 * - An accepted POST stores user_id in a regenerated session, adds a success flash and
+	 *   redirects to /member/.
+	 * - Any other method answers 405 through httpError().
 	 *
 	 * @return void
+	 * @see \App\Operation\AuthenticateUser  The authentication decision.
 	 */
 	public function login(): void {
 		$method = $this->app->request->method();
@@ -1476,9 +1481,21 @@ use App\Operation\CreateApiToken;
 final class ApiTokenController extends BaseController {
 
 	/**
-	 * Create a new API token from a JSON request.
+	 * Create an API token from a JSON request.
+	 *
+	 * CreateApiToken makes the decision. This action checks the transport shape of the request
+	 * and translates the Operation's result to JSON.
+	 *
+	 * Behavior:
+	 * - The request is checked in order, and the first failure answers with a problem document:
+	 *     1) 405 unless the method is POST.
+	 *     2) 415 unless the content type is application/json.
+	 *     3) 400 unless the body is a JSON object.
+	 * - 422 with {"ok": false, "message": ...} when CreateApiToken refuses.
+	 * - 201 with {"ok": true, "token": ...} when the token was created.
 	 *
 	 * @return void
+	 * @see \App\Operation\CreateApiToken  The token decision.
 	 */
 	public function create(): void {
 		if ($this->app->request->method() !== 'POST') {
@@ -1549,6 +1566,10 @@ final class InvoiceController extends BaseController {
 	/**
 	 * Download a generated invoice PDF.
 	 *
+	 * Behavior:
+	 * - 404 through httpError() when the id is below 1 or the invoice has no file.
+	 * - Otherwise sends the file as invoice-{id}.pdf.
+	 *
 	 * @return void
 	 */
 	public function download(): void {
@@ -1590,7 +1611,13 @@ use CitOmni\Kernel\Controller\BaseController;
 final class AuthController extends BaseController {
 
 	/**
-	 * Destroy the authenticated session and redirect to login.
+	 * Sign the user out and redirect to the login page.
+	 *
+	 * POST only, so that a link or a prefetch cannot sign the user out.
+	 *
+	 * Behavior:
+	 * - 405 through httpError() unless the method is POST.
+	 * - Otherwise deletes the remember_token cookie, destroys the session and redirects to /login/.
 	 *
 	 * @return void
 	 */

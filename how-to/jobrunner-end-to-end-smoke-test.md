@@ -137,17 +137,13 @@ use CitOmni\JobRunner\Contract\JobHandlerInterface;
 use CitOmni\JobRunner\Value\JobContext;
 
 /**
- * SleepJobHandler: App-local smoke handler for CitOmni JobRunner.
+ * SleepJobHandler: App-local JobRunner handler for the end-to-end smoke test.
  *
- * Behavior:
- * - Reads runtime options from the job payload.
- * - Writes structured job logs and stdout lines.
- * - Updates step progress and heartbeat while running.
- * - Cooperates with cancellation requests.
+ * Exercises the JobRunner worker end to end: progress reporting, logs, heartbeats and
+ * cancellation.
  *
- * Notes:
- * - This is intentionally app-local smoke-test code.
- * - Do not move this into citomni/jobrunner without a deliberate API decision.
+ * Rules:
+ * - Keep it app-local. Moving it into citomni/jobrunner needs a deliberate API decision.
  *
  * @internal App-local smoke test only.
  */
@@ -299,16 +295,13 @@ use CitOmni\JobRunner\Operation\StartJob;
 use CitOmni\Kernel\Command\BaseCommand;
 
 /**
- * StartSleepJobCommand: Start an app-local JobRunner sleep smoke job.
+ * StartSleepJobCommand: CLI adapter that starts the JobRunner sleep smoke job.
  *
- * Behavior:
- * - Creates a queued job through StartJob.
- * - Lets JobRunner launch the detached CLI worker.
- * - Prints the job identity returned by StartJob.
+ * Gives a developer one command to queue the smoke job. Queueing the job and launching the
+ * worker belong to StartJob and JobRunner.
  *
- * Notes:
- * - This command is for dev smoke testing only.
- * - Register it in the app dev command map, not in citomni/jobrunner.
+ * Rules:
+ * - Dev smoke testing only. Register it in the app's dev command map, not in citomni/jobrunner.
  *
  * @internal App-local smoke test only.
  */

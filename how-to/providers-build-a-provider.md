@@ -108,11 +108,12 @@ declare(strict_types=1);
 namespace VendorName\MyProvider\Boot;
 
 /**
- * Registry: declarative overlay surface for CitOmni.
- * Constants only; read directly by kernel builders:
- * - App::buildConfig()   -> CFG_HTTP / CFG_CLI (deep, last-wins)
- * - App::buildRoutes()   -> ROUTES_HTTP / ROUTES_CLI (path-keyed, last-wins)
- * - App::buildServices() -> MAP_HTTP / MAP_CLI (left-wins per step: later providers > earlier; app wins last)
+ * Registry: Boot contributions of this provider package.
+ *
+ * Declares cfg baselines, services and routes as constant arrays for the App to merge at boot.
+ *
+ * Rules:
+ * - Constants only: No code runs here, and nothing reads the environment.
  */
 final class Registry {
 
@@ -153,11 +154,10 @@ final class Registry {
 		],
 	];
 
-	/** CLI mirrors if needed
-	public const CFG_CLI = [...];
-	public const MAP_CLI = [...];
-	public const ROUTES_CLI = [...]; // rare
-	*/
+	// CLI mirrors, if needed:
+	// public const CFG_CLI = [...];
+	// public const MAP_CLI = [...];
+	// public const COMMANDS_CLI = [...];
 }
 ```
 
@@ -181,31 +181,26 @@ namespace VendorName\MyProvider\Service;
 use CitOmni\Kernel\Service\BaseService;
 
 /**
- * Greeter: Deterministic greeting builder with minimal overhead.
+ * Greeter: Service that builds greeting strings.
  *
- * Responsibilities
- * - Build a greeting string from a validated name and an optional suffix.
- * - Options override config; both are optional.
- * - No I/O; no global state; fail-fast on invalid inputs.
+ * Builds a greeting from a validated name and an optional suffix. Printing or rendering the
+ * greeting is left to the caller.
  *
- * Performance
- * - Computes immutable scalars in init(); hot-path methods allocate minimally.
- *
- * Typical usage:
- *   $msg = $this->app->greeter->greet('Alice'); // "Hello, Alice - from My App"
- *
- * @throws \InvalidArgumentException On empty/invalid input name.
+ * Rules:
+ * - No I/O and no global state; compute immutable scalars in init().
+ * - Reject invalid input with \InvalidArgumentException.
  */
 final class Greeter extends BaseService {
 	/** @var string Immutable suffix computed at init() */
 	private string $suffix = '';
 
 	/**
-	 * One-time initialization per request/process.
-	 * Merges construction options (from map) with runtime policy (from cfg).
+	 * Resolve the greeting suffix once per instance.
 	 *
-	 * Precedence:
-	 *   options['suffix'] > cfg.identity.app_name (prefixed with " - from ")
+	 * Behavior:
+	 * - Precedence: A non-empty suffix option, then " - from " followed by cfg identity.app_name,
+	 *   then no suffix.
+	 * - Clears $this->options after reading them.
 	 *
 	 * @return void
 	 */
@@ -229,12 +224,11 @@ final class Greeter extends BaseService {
 	}
 
 	/**
-	 * Build a greeting (pure, allocation-lean).
+	 * Build a greeting for a name.
 	 *
-	 * @param string $name Non-empty display name; trimmed.
-	 * @return string Greeting string.
-	 *
-	 * @throws \InvalidArgumentException If $name is empty after trim.
+	 * @param  string  $name  Display name; trimmed, must not be empty.
+	 * @return string  "Hello, {name}" followed by the suffix.
+	 * @throws \InvalidArgumentException  When the trimmed name is empty.
 	 */
 	public function greet(string $name): string {
 		$name = \trim($name);
@@ -330,14 +324,7 @@ namespace VendorName\MyProvider\Controller;
 use CitOmni\Kernel\Controller\BaseController;
 
 /**
- * DemoController: simple example for provider-exposed HTTP route.
- *
- * Controllers are short-lived action handlers:
- * - Instantiated once per request by the Router.
- * - `$this->app` is injected automatically.
- * - `init()` runs before the first action call.
- *
- * @see \CitOmni\Http\Router
+ * DemoController: HTTP adapter for the provider's demo routes.
  */
 final class DemoController extends BaseController {
 
@@ -546,11 +533,12 @@ declare(strict_types=1);
 namespace VendorName\MyProvider\Boot;
 
 /**
- * Provider registry: declarative overlays only.
- * Constants are read by the kernel builders:
- * - App::buildConfig()   -> CFG_HTTP / CFG_CLI
- * - App::buildRoutes()   -> ROUTES_HTTP / ROUTES_CLI
- * - App::buildServices() -> MAP_HTTP / MAP_CLI
+ * Registry: Boot contributions of this provider package.
+ *
+ * Declares cfg baselines, services and routes as constant arrays for the App to merge at boot.
+ *
+ * Rules:
+ * - Constants only: No code runs here, and nothing reads the environment.
  */
 final class Registry {
 
@@ -602,8 +590,8 @@ use CitOmni\Kernel\Service\BaseService;
 /**
  * DemoService: Tiny example service.
  *
- * - Deterministic init(): consumes options, derives immutable scalars.
- * - No I/O in init(); keep hot paths allocation-lean.
+ * Rules:
+ * - No I/O in init(); derive immutable scalars there and keep hot paths allocation-lean.
  */
 final class DemoService extends BaseService {
 
@@ -636,10 +624,7 @@ namespace VendorName\MyProvider\Controller;
 use CitOmni\Kernel\Controller\BaseController;
 
 /**
- * DemoController: provider-exposed HTTP route handler.
- *
- * Controllers are instantiated by the Router (not services).
- * Exceptions bubble to the mode-specific ErrorHandler.
+ * DemoController: HTTP adapter for the provider's demo page.
  */
 final class DemoController extends BaseController {
 

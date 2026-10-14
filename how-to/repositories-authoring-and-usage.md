@@ -867,30 +867,26 @@ namespace Vendor\Package\Repository;
 use CitOmni\Kernel\Repository\BaseRepository;
 
 /**
- * UserRepository: Persistence access for user records and credential-adjacent storage.
+ * UserRepository: Persistence for user records and credential-adjacent storage.
  *
- * Owns SQL for reading and writing user rows. Returns stable array shapes and
- * scalar persistence results. Does not perform transport work, orchestration,
- * mail dispatch, or user-facing text composition.
+ * Owns SQL for reading and writing user rows. Transport work, orchestration, mail dispatch
+ * and user-facing text belong to other layers.
  *
- * Behavior:
- * - All SQL lives here.
- * - Uses the shared Db service from the App.
- * - Returns predictable array shapes or scalar persistence results.
- *
- * Notes:
- * - This Repository is intentionally boring. That is a compliment.
- * - Workflow decisions belong in Operation, not here.
+ * Rules:
+ * - Keep all SQL for these tables here, executed through the Db service.
+ * - Return stable array shapes or scalar persistence results.
+ * - Leave workflow decisions to Operations.
  */
 final class UserRepository extends BaseRepository {
 
 	/**
-	 * Find the authentication row for a given email address.
+	 * Find the authentication row for an email address.
 	 *
 	 * Returns only the columns needed for authentication-related persistence work.
 	 *
-	 * @param string $email Normalized email address.
-	 * @return array{id:int,email:string,password_hash:string,status:string}|null Matching row or null.
+	 * @param  string  $email  Trimmed before use; must not be empty.
+	 * @return array{id:int,email:string,password_hash:string,status:string}|null  Null when no user has the email.
+	 * @throws \InvalidArgumentException  When the trimmed email is empty.
 	 */
 	public function findAuthRowByEmail(string $email): ?array {
 		$email = \trim($email);
@@ -921,8 +917,8 @@ final class UserRepository extends BaseRepository {
 	/**
 	 * Insert a new user and return the generated id.
 	 *
-	 * @param array{email:string,password_hash:string,status:string,created_at:string} $data Row payload.
-	 * @return int New user id.
+	 * @param  array{email:string,password_hash:string,status:string,created_at:string}  $data
+	 * @return int  New user id.
 	 */
 	public function insertUser(array $data): int {
 		return $this->app->db->insert('users', [
@@ -936,9 +932,10 @@ final class UserRepository extends BaseRepository {
 	/**
 	 * Update the password hash for a specific user.
 	 *
-	 * @param int    $userId       User id.
-	 * @param string $passwordHash New password hash.
-	 * @return int Affected row count.
+	 * @param  int  $userId  User id, at least 1.
+	 * @param  string  $passwordHash  New password hash; must not be empty.
+	 * @return int  Affected row count.
+	 * @throws \InvalidArgumentException  When the user id is below 1 or the hash is empty.
 	 */
 	public function updatePasswordHash(int $userId, string $passwordHash): int {
 		if ($userId < 1) {
@@ -957,10 +954,11 @@ final class UserRepository extends BaseRepository {
 	}
 
 	/**
-	 * Check whether a user exists for the given email address.
+	 * Check whether a user exists for an email address.
 	 *
-	 * @param string $email Normalized email address.
-	 * @return bool True when the email already exists.
+	 * @param  string  $email  Trimmed before use; must not be empty.
+	 * @return bool
+	 * @throws \InvalidArgumentException  When the trimmed email is empty.
 	 */
 	public function existsByEmail(string $email): bool {
 		$email = \trim($email);
@@ -977,6 +975,8 @@ final class UserRepository extends BaseRepository {
 
 ## 13) Repository skeleton (drop-in)
 
+The PHPDoc follows the [Code Documentation Guide](../contribute/code-documentation-guide.md).
+
 ```php
 <?php
 declare(strict_types=1);
@@ -986,37 +986,23 @@ namespace <Vendor>\<Package>\Repository;
 use CitOmni\Kernel\Repository\BaseRepository;
 
 /**
- * <RepositoryName>: <One-line responsibility summary>.
+ * <RepositoryName>: Persistence for <entity/aggregate/table-set>.
  *
- * <Optional longer description: What storage this Repository owns and what it does not own.>
+ * <Purpose and scope: what storage this Repository owns and what it leaves to other layers.>
  *
- * Behavior:
- * - Owns SQL and datastore IO for <entity/aggregate/table-set>.
- * - Returns stable array shapes and scalar persistence results.
- * - Performs no transport shaping and no workflow orchestration.
- *
- * Notes:
- * - Keep methods explicit and predictable.
- * - Prefer narrow methods over "doEverything()" persistence buckets.
+ * Rules:
+ * - Own all SQL and datastore I/O for <entity/aggregate/table-set>.
+ * - Return stable array shapes and scalar persistence results.
+ * - Prefer narrow methods over catch-all persistence methods.
  */
 final class <RepositoryName> extends BaseRepository {
 
 	/**
-	 * <MethodName>: <One-line summary>.
+	 * <One-line summary, imperative.>
 	 *
-	 * <Optional longer description.>
-	 *
-	 * Behavior:
-	 * - Validates persistence-relevant input early.
-	 * - Uses the narrowest appropriate Db helper.
-	 * - Normalizes the returned row or scalar contract before returning.
-	 *
-	 * @param <type> $<param> <Constraints>.
-	 * @return <type> <Return contract>.
-	 *
-	 * @throws \InvalidArgumentException On invalid input.
-	 * @throws \CitOmni\Infrastructure\Exception\DbConnectException On connection/session init failure.
-	 * @throws \CitOmni\Infrastructure\Exception\DbQueryException On SQL prepare/bind/execute failure.
+	 * @param  <type>  $<param>  <Constraints, only when they add to the type.>
+	 * @return <type>  <Shape or meaning, only when it adds to the type.>
+	 * @throws \InvalidArgumentException  <When the input violates a constraint.>
 	 */
 	public function <methodName>(<type> $<param>): <type> {
 		// 1) Validate input early.

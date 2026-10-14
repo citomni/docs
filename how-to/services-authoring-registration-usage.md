@@ -526,17 +526,13 @@ declare(strict_types=1);
 namespace Vendor\Package\Boot;
 
 /**
- * Declare this provider package's boot contributions.
+ * Registry: Boot contributions of this provider package.
  *
- * Behavior:
- * - Registers HTTP and CLI service bindings.
- * - Registers HTTP and CLI cfg overlays.
- * - Registers HTTP routes.
- * - Registers CLI commands when the package provides CLI entry points.
+ * Declares the package's services, cfg baselines, routes and commands as constant arrays for
+ * the App to merge at boot. Building the merged maps and resolving services belong to the App.
  *
- * Notes:
- * - Keep registries declarative.
- * - No I/O, no runtime branching, no environment reads.
+ * Rules:
+ * - Keep every constant declarative: No I/O, no runtime branching, no environment reads.
  * - Routes and commands are dispatch maps, not cfg.
  */
 final class Registry {
@@ -733,34 +729,23 @@ namespace Vendor\Package\Service;
 use CitOmni\Kernel\Service\BaseService;
 
 /**
- * Greeter: Build deterministic greeting strings.
+ * Greeter: Service that builds greeting strings.
  *
- * Provides a tiny greeting API used by examples and smoke tests.
+ * A tiny greeting API for examples and smoke tests. Printing or rendering the greeting is
+ * left to the caller.
  *
- * Behavior:
- * - Reads construction-time options from the service map.
- * - Falls back to cfg when no option is supplied.
- * - Validates public input strictly.
- *
- * Notes:
- * - No I/O.
- * - No global state.
- * - Designed to be boring, which is a feature.
- *
- * Typical usage:
- *   $message = $this->app->greeter->greet('Alice');
- *
- * @throws \InvalidArgumentException When the name is empty.
+ * Rules:
+ * - No I/O and no global state.
+ * - Reject invalid public input with \InvalidArgumentException.
  */
 final class Greeter extends BaseService {
 	private string $suffix = '';
 
 	/**
-	 * Initialize cheap immutable state.
+	 * Resolve the greeting suffix once per instance.
 	 *
 	 * Behavior:
-	 * - Options override cfg.
-	 * - The package registry owns the greeter cfg baseline.
+	 * - A non-empty suffix option wins over cfg greeter.default_suffix.
 	 *
 	 * @return void
 	 */
@@ -772,11 +757,11 @@ final class Greeter extends BaseService {
 	}
 
 	/**
-	 * Build a greeting.
+	 * Build a greeting for a name.
 	 *
-	 * @param string $name Non-empty display name.
-	 * @return string Greeting string.
-	 * @throws \InvalidArgumentException When the name is empty.
+	 * @param  string  $name  Display name; trimmed, must not be empty.
+	 * @return string  "Hello, {name}", followed by the suffix when one is set.
+	 * @throws \InvalidArgumentException  When the trimmed name is empty.
 	 */
 	public function greet(string $name): string {
 		$name = \trim($name);
@@ -818,6 +803,8 @@ $message = $this->app->greeter->greet('World');
 
 ## 12) Service skeleton
 
+The PHPDoc follows the [Code Documentation Guide](../contribute/code-documentation-guide.md).
+
 ```php
 <?php
 declare(strict_types=1);
@@ -827,30 +814,21 @@ namespace Vendor\Package\Service;
 use CitOmni\Kernel\Service\BaseService;
 
 /**
- * ServiceName: One-line responsibility summary.
+ * ServiceName: <Role: what it is and which layer, one line.>
  *
- * Optional longer description of intent, constraints, and performance assumptions.
+ * <Purpose and scope: why it exists and what it deliberately leaves to others.>
  *
- * Behavior:
- * - Key guarantee or step.
- * - Another guarantee.
- *
- * Notes:
- * - Caveats, determinism, and performance notes.
- *
- * Typical usage:
- *   $result = $this->app->serviceId->methodName('value');
+ * Rules:
+ * - <Requirement every present and future member must meet.>
  */
 final class ServiceName extends BaseService {
 	private string $value = '';
 
 	/**
-	 * Initialize cheap immutable state.
+	 * Resolve immutable state once per instance.
 	 *
 	 * Behavior:
-	 * - Read construction-time options.
-	 * - Read cfg only when needed.
-	 * - Validate derived values once.
+	 * - A non-empty value option wins over cfg service_name.value.
 	 *
 	 * @return void
 	 */
@@ -869,11 +847,11 @@ final class ServiceName extends BaseService {
 	}
 
 	/**
-	 * Method summary.
+	 * Append the configured value to an input.
 	 *
-	 * @param string $input Input description.
-	 * @return string Result description.
-	 * @throws \InvalidArgumentException When input is invalid.
+	 * @param  string  $input  Trimmed before use; must not be empty.
+	 * @return string
+	 * @throws \InvalidArgumentException  When the trimmed input is empty.
 	 */
 	public function methodName(string $input): string {
 		$input = \trim($input);
