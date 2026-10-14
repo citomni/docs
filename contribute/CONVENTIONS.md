@@ -27,6 +27,7 @@ This summary is only an orientation. The [canonical conventions](https://github.
 
 - [Organization-wide contribution guide](https://github.com/citomni/.github/blob/main/CONTRIBUTING.md)
 - [CitOmni Testing Guide](./testing-guide.md)
+- [CitOmni Code Documentation Guide](./code-documentation-guide.md)
 - [CitOmni Architecture](../concepts/architecture.md)
 - [Licensing Overview](https://github.com/citomni/.github/blob/main/LICENSING.md)
 - [Pull Request Template](https://github.com/citomni/.github/blob/main/PULL_REQUEST_TEMPLATE.md)

@@ -18,6 +18,7 @@ They are intended for contributors who need clear rules for authoring, testing, 
 
 ## Index
 
+- [Code documentation guide](./code-documentation-guide.md)
 - [CONVENTIONS](./CONVENTIONS.md)
 - [Testing guide](./testing-guide.md)
 

@@ -20,6 +20,7 @@ This repository hosts the public documentation for the CitOmni Framework.
 
 ### contribute
 - [contribute/README.md](./contribute/README.md)
+- [contribute/code-documentation-guide.md](./contribute/code-documentation-guide.md)
 - [contribute/CONVENTIONS.md](./contribute/CONVENTIONS.md)
 - [contribute/testing-guide.md](./contribute/testing-guide.md)
 
@@ -82,6 +83,9 @@ This repository hosts the public documentation for the CitOmni Framework.
 ### troubleshooting
 - [troubleshooting/README.md](./troubleshooting/README.md)
 - [troubleshooting/provider-setup+installation-troubleshooting-citomni.md](./troubleshooting/provider-setup+installation-troubleshooting-citomni.md)
+
+### _patches
+- [_patches/README.md](./_patches/README.md)
 
 ## Expected structure (reference)
 
@@ -154,4 +158,4 @@ Below is the planned layout. Some sections may be empty while we migrate content
 
 ---
 _This README was generated automatically._  
-_Last updated: 2026-09-02 13:50:40_
+_Last updated: 2026-10-14 16:32:55_
