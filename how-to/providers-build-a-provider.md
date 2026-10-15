@@ -118,17 +118,17 @@ namespace VendorName\MyProvider\Boot;
  */
 final class Registry {
 
-	/** Config overlays (deep, last-wins) */
-	public const CFG_HTTP = [
-		'myProvider' => [
-			'enabled'    => true,
-			'api_base'   => 'https://api.example.test',
-			'cache_ttl'  => 120,
+	/** Cfg baseline for both modes (deep, last-wins). */
+	public const CFG_COMMON = [
+		'my_provider' => [
+			'enabled'   => true,                        // true turns the provider's features on.
+			'api_base'  => 'https://api.example.test',  // Base URL of the remote API.
+			'cache_ttl' => 120,                         // Seconds that fetched data stays cached.
 		],
 	];
 
-	/** Service map (ID -> class or shape) - left-wins per merge step */
-	public const MAP_HTTP = [
+	/** Services for both modes (ID -> class or shape; left-wins per merge step). */
+	public const MAP_COMMON = [
 		// Bare FQCN: constructor receives (App $app)
 		'demo' => \VendorName\MyProvider\Service\DemoService::class,
 
@@ -155,8 +155,10 @@ final class Registry {
 		],
 	];
 
-	// CLI mirrors, if needed:
+	// Mode-specific contributions, only for what depends on one mode:
+	// public const CFG_HTTP = [...];
 	// public const CFG_CLI = [...];
+	// public const MAP_HTTP = [...];
 	// public const MAP_CLI = [...];
 	// public const COMMANDS_CLI = [...];
 }
@@ -192,36 +194,20 @@ use CitOmni\Kernel\Service\BaseService;
  * - Reject invalid input with \InvalidArgumentException.
  */
 final class Greeter extends BaseService {
-	/** @var string Immutable suffix computed at init() */
-	private string $suffix = '';
+	/** Text appended to every greeting; empty for none. */
+	private string $suffix;
 
 	/**
 	 * Resolve the greeting suffix once per instance.
 	 *
 	 * Behavior:
-	 * - Precedence: A non-empty suffix option, then " - from " followed by cfg identity.app_name,
-	 *   then no suffix.
-	 * - Clears $this->options after reading them.
+	 * - The suffix option wins over cfg my_provider.greeter.suffix.
 	 *
 	 * @return void
 	 */
 	protected function init(): void {
-		// 1) Read optional policy from config
-		$appName = '';
-		$identity = $this->app->cfg->identity ?? null;
-		if (\is_object($identity)) {
-			$appName = (string)($identity->app_name ?? '');
-		}
-
-		// 2) Consume options and clear them (free memory, avoid reuse)
-		$opt = $this->options;
-		$this->options = [];
-
-		// 3) Compute immutable scalar
-		$optSuffix = (string)($opt['suffix'] ?? '');
-		$this->suffix = ($optSuffix !== '')
-			? $optSuffix
-			: ($appName !== '' ? ' - from ' . $appName : '');
+		// Package-owned cfg is the right operand, which ?? does not guard, so a missing baseline throws.
+		$this->suffix = (string)($this->options['suffix'] ?? $this->app->cfg->my_provider->greeter->suffix);
 	}
 
 	/**
@@ -244,8 +230,8 @@ final class Greeter extends BaseService {
 **Key points**
 
 * Extends `BaseService`; **do not** `new` it manually-let `App` resolve on first access.
-* Reads config via `$this->app->cfg` (deep, read-only wrapper).
-* Treats map `'options'` as construction-time hints; clears `$this->options` in `init()`.
+* Reads its own cfg, `my_provider.greeter.suffix`, directly. The provider ships that baseline (5.2), so a missing baseline throws `\OutOfBoundsException` instead of hiding behind a default.
+* Treats map `'options'` as construction-time wiring: A set `suffix` option wins over cfg, an empty string included.
 
 ---
 
@@ -260,24 +246,28 @@ declare(strict_types=1);
 namespace VendorName\MyProvider\Boot;
 
 final class Registry {
-	public const MAP_HTTP = [
-		'greeter' => [
-			'class'   => \VendorName\MyProvider\Service\Greeter::class,
-			'options' => ['suffix' => ' - from Vendor'], // optional
+	/** Services for HTTP and CLI. */
+	public const MAP_COMMON = [
+		'greeter' => \VendorName\MyProvider\Service\Greeter::class,
+	];
+
+	/** Cfg baseline for both modes. */
+	public const CFG_COMMON = [
+		'my_provider' => [
+			'greeter' => [
+				'suffix' => '',  // Text appended to every greeting, such as " - from My App"; empty for none.
+			],
 		],
 	];
-
-	public const CFG_HTTP = [
-		'identity' => ['app_name' => 'My App'], // optional
-	];
-
-	public const MAP_CLI = self::MAP_HTTP;
-	public const CFG_CLI = self::CFG_HTTP;
 }
 ```
 
-> **Services precedence:** vendor baseline -> providers (iterated in order, but **later providers override earlier ones**) -> **application**.  
-> The kernel applies `$map = $pvMap + $map;` per provider and `$map = $appMap + $map;` last.  
+Both modes use the service and its cfg, so they go in `MAP_COMMON` and `CFG_COMMON`. Declare `MAP_HTTP` / `MAP_CLI` or `CFG_HTTP` / `CFG_CLI` only for what depends on one mode. The cfg sits under the provider's own root key, `my_provider`, so it never collides with another package's cfg.
+
+> **Services precedence:** vendor baseline -> providers (iterated in order; within a provider, `MAP_HTTP` / `MAP_CLI` wins over `MAP_COMMON`, and **later providers override earlier ones**) -> **application** (`/config/services.php`, then `/config/services_{http|cli}.php`).
+>
+> The kernel applies `$map = $pvMap + $map;` per provider constant, `MAP_COMMON` first, and `$map = $appMap + $map;` last.
+>
 > Array union is **left-wins per step**, which means the application layer always wins overall.
 
 ---
@@ -295,7 +285,7 @@ return [
 
 	// ...or keep class and change options:
 	// 'greeter' => [
-	// 	'class'   => \Vendor\Package\Service\Greeter::class,
+	// 	'class'   => \VendorName\MyProvider\Service\Greeter::class,
 	// 	'options' => ['suffix' => ' - from Production'],
 	// ],
 ];
@@ -435,12 +425,12 @@ return [
 
 ### 8.2 Override configuration
 
-`/config/citomni_http_cfg.php`:
+`/config/citomni_cfg.php`, which both modes read:
 
 ```php
 <?php
 return [
-	'myProvider' => [
+	'my_provider' => [
 		'enabled'   => true,
 		'api_base'  => 'https://api.example.prod',
 		'cache_ttl' => 300,
@@ -565,16 +555,19 @@ namespace VendorName\MyProvider\Boot;
  */
 final class Registry {
 
-	/** HTTP configuration overlay (deep, last-wins) */
-	public const CFG_HTTP = [
-		'myProvider' => [
-			'enabled'   => true,
-			'cache_ttl' => 60,
+	/** Cfg baseline for both modes (deep, last-wins). */
+	public const CFG_COMMON = [
+		'my_provider' => [
+			'enabled'   => true,  // true turns the provider's features on.
+			'cache_ttl' => 60,    // Seconds that fetched data stays cached.
+			'demo'      => [
+				'suffix' => '',  // Text appended to every ping answer, such as " - from My App"; empty for none.
+			],
 		],
 	];
 
-	/** HTTP service map (ID -> class or ['class'=>..., 'options'=>...]) */
-	public const MAP_HTTP = [
+	/** Services for both modes (ID -> class or ['class'=>..., 'options'=>...]). */
+	public const MAP_COMMON = [
 		// Bare class (constructor receives App, []):
 		'demo' => \VendorName\MyProvider\Service\DemoService::class,
 
@@ -618,24 +611,19 @@ use CitOmni\Kernel\Service\BaseService;
  */
 final class DemoService extends BaseService {
 
-	private string $suffix = '';
+	/** Text appended to every ping answer; empty for none. */
+	private string $suffix;
 
 	/**
 	 * Resolve the ping suffix once per instance.
 	 *
 	 * Behavior:
-	 * - Precedence: The suffix option when set, then " - from " followed by cfg
-	 *   identity.app_name, then no suffix.
-	 * - Clears $this->options after reading them.
+	 * - The suffix option wins over cfg my_provider.demo.suffix.
 	 *
 	 * @return void
 	 */
 	protected function init(): void {
-		$opt = $this->options;
-		$this->options = []; // free memory, avoid accidental reuse
-
-		$appName = (string)($this->app->cfg->identity->app_name ?? '');
-		$this->suffix = (string)($opt['suffix'] ?? ($appName !== '' ? ' - from ' . $appName : ''));
+		$this->suffix = (string)($this->options['suffix'] ?? $this->app->cfg->my_provider->demo->suffix);
 	}
 
 	/**

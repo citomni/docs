@@ -30,14 +30,18 @@ src/Boot/Registry.php
 
 A provider registry may define these constants, all optional:
 
-| Constant     | Read by              | Purpose                   |
-|--------------|----------------------|---------------------------|
-| MAP_HTTP     | App::buildServices() | Service map for HTTP mode |
-| MAP_CLI      | App::buildServices() | Service map for CLI mode  |
-| CFG_HTTP     | App::buildConfig()   | Config overlay for HTTP   |
-| CFG_CLI      | App::buildConfig()   | Config overlay for CLI    |
-| ROUTES_HTTP  | App::buildRoutes()   | HTTP route dispatch map   |
-| COMMANDS_CLI | App::buildCommands() | CLI command dispatch map  |
+| Constant     | Read by              | Purpose                          |
+|--------------|----------------------|----------------------------------|
+| MAP_COMMON   | App::buildServices() | Service map for both modes       |
+| MAP_HTTP     | App::buildServices() | Services that only HTTP mode has |
+| MAP_CLI      | App::buildServices() | Services that only CLI mode has  |
+| CFG_COMMON   | App::buildConfig()   | Config overlay for both modes    |
+| CFG_HTTP     | App::buildConfig()   | Config overlay for HTTP only     |
+| CFG_CLI      | App::buildConfig()   | Config overlay for CLI only      |
+| ROUTES_HTTP  | App::buildRoutes()   | HTTP route dispatch map          |
+| COMMANDS_CLI | App::buildCommands() | CLI command dispatch map         |
+
+Within one provider, the mode-specific constant wins over its `COMMON` counterpart.
 
 Important:
 
@@ -138,7 +142,7 @@ Services come from three layers:
 
 1. Vendor baseline map.
 2. Provider maps.
-3. App-local `/config/services.php`.
+3. App-local `/config/services.php` and the optional `/config/services_{http|cli}.php`.
 
 The current `App::buildServices()` flow is:
 
@@ -148,27 +152,37 @@ $map = match ($mode) {
 	Mode::CLI  => \CitOmni\Cli\Boot\Registry::MAP_CLI,
 };
 
-foreach ($providers as $fqcn) {
-	$constFq = $fqcn . '::' . $const;
+$modeConst = ($mode === Mode::HTTP) ? 'MAP_HTTP' : 'MAP_CLI';
 
-	if (\defined($constFq)) {
-		$pvmap = \constant($constFq);
-		$map = $pvmap + $map;
+foreach ($providers as $fqcn) {
+	foreach (['MAP_COMMON', $modeConst] as $const) {
+		$constFq = $fqcn . '::' . $const;
+
+		if (\defined($constFq)) {
+			$pvmap = \constant($constFq);
+			$map = $pvmap + $map;
+		}
 	}
 }
 
-if (\is_file($appMapFile)) {
-	$appMap = require $appMapFile;
+if (\is_file($appCommonMapFile)) {
+	$appMap = require $appCommonMapFile;
 	$map = $appMap + $map;
+}
+
+if (\is_file($appModeMapFile)) {
+	$appModeMap = require $appModeMapFile;
+	$map = $appModeMap + $map;
 }
 ```
 
 Service precedence:
 
 ```text
-/config/services.php
-  > last provider in /config/providers.php
-  > earlier providers
+/config/services_{http|cli}.php
+  > /config/services.php
+  > last provider in /config/providers.php: its MAP_HTTP|MAP_CLI, then its MAP_COMMON
+  > earlier providers, in the same way
   > vendor baseline registry
 ```
 
@@ -281,17 +295,17 @@ Vendor baseline registry:
 - \CitOmni\Http\Boot\Registry::CFG_HTTP
 - \CitOmni\Cli\Boot\Registry::CFG_CLI
 
-Provider overlays:
-- Provider::CFG_HTTP
-- Provider::CFG_CLI
+Provider overlays, per provider in /config/providers.php order:
+- Provider::CFG_COMMON
+- Provider::CFG_HTTP or Provider::CFG_CLI
 
 App base:
-- /config/citomni_http_cfg.php
-- /config/citomni_cli_cfg.php
+- /config/citomni_cfg.php
+- /config/citomni_http_cfg.php or /config/citomni_cli_cfg.php
 
 App env:
-- /config/citomni_http_cfg.{ENV}.php
-- /config/citomni_cli_cfg.{ENV}.php
+- /config/citomni_cfg.{ENV}.php
+- /config/citomni_http_cfg.{ENV}.php or /config/citomni_cli_cfg.{ENV}.php
 ```
 
 Config merge rule:
@@ -450,6 +464,8 @@ The application may define local services or override provider/vendor services i
 
 The file must return an associative array.
 
+A service that only one mode needs goes in the optional `/config/services_http.php` or `/config/services_cli.php`. That file wins over `/config/services.php` for the same service ID.
+
 Example:
 
 ```php
@@ -532,25 +548,19 @@ namespace Vendor\Package\Boot;
  * - Routes and commands are dispatch maps, not cfg.
  */
 final class Registry {
-	public const MAP_HTTP = [
+	/** Services for HTTP and CLI. */
+	public const MAP_COMMON = [
+		'greeter' => \Vendor\Package\Service\Greeter::class,
+	];
+
+	/** Cfg baseline for both modes. */
+	public const CFG_COMMON = [
 		'greeter' => [
-			'class' => \Vendor\Package\Service\Greeter::class,
-			'options' => [
-				'suffix' => '- from Vendor',
-			],
+			'default_suffix' => '- from cfg',  // Text appended to every greeting after a space; empty for none.
 		],
 	];
 
-	public const MAP_CLI = self::MAP_HTTP;
-
-	public const CFG_HTTP = [
-		'greeter' => [
-			'default_suffix' => '- from cfg',
-		],
-	];
-
-	public const CFG_CLI = self::CFG_HTTP;
-
+	/** HTTP routes. */
 	public const ROUTES_HTTP = [
 		'/greeter' => [
 			'controller' => \Vendor\Package\Controller\GreeterController::class,
@@ -561,6 +571,7 @@ final class Registry {
 		],
 	];
 
+	/** CLI commands. */
 	public const COMMANDS_CLI = [
 		'greeter:say' => [
 			'command' => \Vendor\Package\Command\GreeterSayCommand::class,
@@ -572,16 +583,9 @@ final class Registry {
 
 ```
 
-If your package has no CLI services, config, or commands, omit the CLI constants.
+Put what both modes share in `MAP_COMMON` and `CFG_COMMON`. Declare `MAP_HTTP`, `MAP_CLI`, `CFG_HTTP` or `CFG_CLI` only for services or cfg that depend on one mode. Within one provider, a mode-specific map wins over `MAP_COMMON` for the same service ID, and mode-specific cfg is merged after `CFG_COMMON`.
 
-If HTTP and CLI maps are intentionally identical, aliasing is fine:
-
-```php
-public const MAP_CLI = self::MAP_HTTP;
-public const CFG_CLI = self::CFG_HTTP;
-```
-
-Do not define obsolete constants merely for symmetry.
+Do not alias one mode's constant to the other, such as `MAP_CLI = self::MAP_HTTP`; the `COMMON` constants exist for that. Declare `ROUTES_HTTP` and `COMMANDS_CLI` only when the package has routes or commands, and do not define empty constants merely for symmetry.
 
 ---
 
@@ -1177,17 +1181,20 @@ Example:
 vendor/package/src/Boot/Registry.php
 ```
 
-The provider should expose:
+Declare only the constants the package needs. Services and cfg that both modes use:
+
+```php
+public const MAP_COMMON = [...];
+public const CFG_COMMON = [...];
+```
+
+Mode-specific services or cfg, routes and commands only when the package has them:
 
 ```php
 public const MAP_HTTP = [...];
 public const CFG_HTTP = [...];
 public const ROUTES_HTTP = [...];
-```
 
-And CLI equivalents only when relevant:
-
-```php
 public const MAP_CLI = [...];
 public const CFG_CLI = [...];
 public const COMMANDS_CLI = [...];
@@ -1287,7 +1294,7 @@ Avoid circular service dependencies. If `A` resolves `B` in `init()` and `B` res
 * [ ] Recoverable failures have explicit fallbacks.
 * [ ] No catch-all exception swallowing.
 * [ ] No runtime reflection or directory scanning.
-* [ ] Registered through provider `Registry::MAP_HTTP` / `MAP_CLI` or `/config/services.php`.
+* [ ] Registered through provider `Registry::MAP_COMMON`, or `MAP_HTTP` / `MAP_CLI` for one mode, or through `/config/services.php`.
 * [ ] Provider dispatch uses `ROUTES_HTTP` for HTTP routes and `COMMANDS_CLI` for CLI commands.
 * [ ] Routes and commands are not placed inside cfg.
 * [ ] Cache behavior is understood and deployment-safe.
