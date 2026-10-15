@@ -405,14 +405,12 @@ $csrfEnabled = (bool)($this->app->cfg->security->csrf->enabled ?? true);
 Important behavior:
 
 * Direct access to unknown keys fails fast
-* `??` works safely for the final key
-* Intermediate missing nodes still require care
+* `??` short-circuits through missing nodes at any depth
 
 Example:
 
 ```php
-$http = isset($this->app->cfg->http) ? $this->app->cfg->http : null;
-$trustProxy = (bool)($http !== null && isset($http->trust_proxy) ? $http->trust_proxy : false);
+$trustProxy = (bool)($this->app->cfg->http->trust_proxy ?? false);
 ```
 
 CitOmni treats config as runtime policy and keeps it separate from route tables and service wiring.

@@ -308,27 +308,19 @@ Example leaf-level read:
 $timezone = (string)($this->app->cfg->locale->timezone ?? 'UTC');
 ```
 
-Important detail:
+Missing nodes are safe with `??` at any depth:
 
 ```php
-$value = $this->app->cfg->unknown->key ?? 'fallback';
+$value = (string)($this->app->cfg->unknown->key ?? 'fallback');
 ```
 
-This is not safe if `unknown` is missing, because the intermediate `unknown` access calls `__get()` directly.
+`Cfg` implements `__isset()`, so `??` checks every node on the path before it reads it, and falls back to the default when any of them is missing. Only a direct read without `??`, such as `$this->app->cfg->unknown->key`, throws `\OutOfBoundsException`.
 
-Use `isset()` when an intermediate node might be absent:
-
-```php
-$value = 'fallback';
-
-if (isset($this->app->cfg->my_node)) {
-	$value = (string)($this->app->cfg->my_node->key ?? 'fallback');
-}
-```
+Use `isset()` only to branch on whether a node exists, for example before converting a whole node with `toArray()`.
 
 ### Package cfg ownership rule
 
-Packages must ship cfg baselines via `Registry::CFG_HTTP` / `Registry::CFG_CLI` for every cfg path they read at runtime.
+Packages must ship cfg baselines via `Registry::CFG_COMMON`, or `Registry::CFG_HTTP` / `Registry::CFG_CLI` for mode-specific values, for every cfg path they read at runtime.
 
 That makes package-owned intermediate keys guaranteed.
 
@@ -350,12 +342,10 @@ if (isset($this->app->cfg->authenticate)) {
 
 If a package-owned path is missing, fix the package baseline instead of adding defensive reads.
 
-Use `isset()` for cross-package optional cfg only:
+Cfg owned by another package may be absent. Read it with `??` and a default; no `isset()` guard is needed:
 
 ```php
-if (isset($this->app->cfg->commerce)) {
-	$timeout = (int)($this->app->cfg->commerce->checkout->timeout ?? 30);
-}
+$timeout = (int)($this->app->cfg->commerce->checkout->timeout ?? 30);
 ```
 
 Baseline top-level nodes may be accessed directly when the vendor baseline guarantees them.
@@ -833,13 +823,11 @@ final class ServiceName extends BaseService {
 	 * @return void
 	 */
 	protected function init(): void {
-		// For package-owned cfg, ship the baseline in Registry::CFG_HTTP / CFG_CLI.
+		// For package-owned cfg, ship the baseline in Registry::CFG_COMMON.
 		$cfgValue = (string)($this->app->cfg->service_name->value ?? '');
 
-		// For cross-package optional cfg, guard the intermediate node first:
-		// if (isset($this->app->cfg->optional_package)) {
-		// 	$cfgValue = (string)($this->app->cfg->optional_package->feature->value ?? $cfgValue);
-		// }
+		// Cfg owned by another package may be absent; ?? short-circuits through missing nodes:
+		// $cfgValue = (string)($this->app->cfg->optional_package->feature->value ?? $cfgValue);
 
 		$optValue = (string)($this->options['value'] ?? '');
 
@@ -886,9 +874,9 @@ $cfgNode = ($raw instanceof \CitOmni\Kernel\Cfg) ? $raw->toArray() : (\is_array(
 $options = \CitOmni\Kernel\Arr::mergeAssocLastWins($cfgNode, $this->options);
 ```
 
-This assumes that `greeter` is owned by the current package and guaranteed by its `Registry::CFG_HTTP` / `Registry::CFG_CLI` baseline.
+This assumes that `greeter` is owned by the current package and guaranteed by its `Registry::CFG_COMMON` baseline.
 
-For cross-package optional cfg, guard the intermediate node first:
+A whole node owned by another package may be absent, so branch on its existence before converting it:
 
 ```php
 $cfgNode = [];
@@ -1291,7 +1279,7 @@ Avoid circular service dependencies. If `A` resolves `B` in `init()` and `B` res
 * [ ] The constructor contract is respected.
 * [ ] `init()` is cheap and deterministic.
 * [ ] Package-owned cfg paths have baselines for all intermediate nodes.
-* [ ] Cross-package optional cfg reads guard missing intermediate nodes with `isset()`.
+* [ ] Cross-package optional cfg reads use `??` with a default; `isset()` only branches on whether a node exists.
 * [ ] Options are used only for construction-time wiring.
 * [ ] Public methods validate input.
 * [ ] Public methods document return contracts and exceptions.
