@@ -230,11 +230,17 @@ Merge rules of `Arr::mergeAssocLastWins()`:
 * Empty values (`''`, `0`, `false`, `null`, `[]`) are valid overrides and win.
 * Every source passes through `Arr::normalizeConfig()` first. Objects and `Traversable`s become arrays; enum cases stay enum cases.
 
-`$app->cfg` is read-only. Direct access to a missing key throws `\OutOfBoundsException`, and `??` short-circuits through nested nodes:
+`$app->cfg` is read-only. A direct read throws `\OutOfBoundsException` at the first missing key, at any depth. `??` and `isset()` check every node on the path and never throw on a missing key. Own cfg, which the package's Registry ships or the app defines in its own config files, is read directly; app cfg read by a package, another package's cfg, and a path present in one mode only are read with `?? <default>`:
 
 ```php
+// Inside citomni/authenticate, which ships authenticate.reauth.max_age_seconds:
+$maxAge = (int)$this->app->cfg->authenticate->reauth->max_age_seconds;
+
+// locale.timezone is app cfg; a package reads it with a default.
 $timezone = (string)($this->app->cfg->locale->timezone ?? 'UTC');
 ```
+
+See [Reading cfg](../how-to/services-authoring-registration-usage.md#reading-cfg) for the full rule.
 
 ### 5.3 Dispatch maps
 

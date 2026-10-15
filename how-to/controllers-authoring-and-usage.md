@@ -396,22 +396,25 @@ Controllers read runtime policy through the read-only config wrapper:
 $this->app->cfg
 ```
 
-Example:
-
-```php
-$csrfEnabled = (bool)($this->app->cfg->security->csrf->enabled ?? true);
-```
-
 Important behavior:
 
-* Direct access to unknown keys fails fast
-* `??` short-circuits through missing nodes at any depth
+* A direct read throws `\OutOfBoundsException` at the first missing key, at any depth
+* `??` and `isset()` check every node on the path and never throw on a missing key, so they hide it
 
-Example:
+Choose the form by who owns the key. A key the app defines in its own config files is read directly, such as `articles.words_per_minute` in citomni/demo-app:
 
 ```php
-$trustProxy = (bool)($this->app->cfg->http->trust_proxy ?? false);
+$wordsPerMinute = (int)$this->app->cfg->articles->words_per_minute;
 ```
+
+A key owned by a package, such as citomni/http, is read with `?? <default>`:
+
+```php
+$captchaEnabled = (bool)($this->app->cfg->security->captcha_protection ?? true);
+$trustProxy     = (bool)($this->app->cfg->http->trust_proxy ?? false);
+```
+
+A Controller inside a provider package reads its own package's keys directly. See [Reading cfg](services-authoring-registration-usage.md#reading-cfg) for the full rule.
 
 CitOmni treats config as runtime policy and keeps it separate from route tables and service wiring.
 
@@ -491,7 +494,7 @@ $hasAvatar = $this->app->request->hasFile('avatar');
 
 ```php
 $data = $this->app->request->only(['email', 'password'], 'post');
-$data = $this->app->request->except(['csrf_token'], 'post');
+$data = $this->app->request->except([$this->app->csrf->fieldName()], 'post');
 ```
 
 These are useful for small predictable payloads and to avoid dragging unrelated keys into Controller logic.

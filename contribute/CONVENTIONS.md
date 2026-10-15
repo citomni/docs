@@ -210,10 +210,19 @@ Configuration is assembled for the selected HTTP or CLI mode, from lowest to hig
 
 Associative config arrays are merged recursively and later values win. List arrays are replaced rather than concatenated. `$app->cfg` exposes the result as a read-only `Cfg` object, with nested associative arrays converted to `Cfg` and lists remaining arrays.
 
-Unknown direct configuration property reads raise `OutOfBoundsException`; use `??` when a value is genuinely optional. Example using the existing locale key:
+A direct read raises `OutOfBoundsException` at the first missing key, at any depth. `??` and `isset()` check every node on the path and never throw on a missing key, so they hide it. Choose the form by who owns the path:
+
+- Own cfg, a path the package's Registry ships or a key the app defines in its own config files: read it directly, with no `??`, `isset()`, `empty()` or `?->`. A package ships a baseline for every path it reads; a missing baseline is fixed in the Registry, not at the call site.
+- An option over own cfg: `$this->options['key'] ?? $this->app->cfg->pkg->key`, with no further `?? <default>`.
+- App cfg read by a package, another package's cfg, or a path that exists in one mode only: `?? <default>`. Use `isset()` only to branch on whether a node exists.
+- A runtime-chosen key in an own map, such as a profile or storage name: `?? null`, then a specific exception.
 
 ```php
-$timezone = $this->app->cfg->locale->timezone ?? 'UTC';
+// Inside citomni/authenticate, which ships authenticate.reauth.max_age_seconds:
+$maxAge = (int)$this->app->cfg->authenticate->reauth->max_age_seconds;
+
+// locale.timezone is app cfg; a package reads it with a default.
+$timezone = (string)($this->app->cfg->locale->timezone ?? 'UTC');
 ```
 
 Service precedence is separate and also deterministic. Newer layers replace earlier registrations for the same service ID:

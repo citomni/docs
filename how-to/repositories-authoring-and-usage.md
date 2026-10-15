@@ -1121,11 +1121,13 @@ Typical keys include:
 Repository code should normally not re-read these values unless the method truly needs persistence-related policy from config. In most cases, the Repository should simply rely on `$this->app->db` having already normalized and validated its own DB configuration.
 
 
-Good:
+Good, when the package's Registry ships `vendor_package.reset_token_retention_days`:
 
 ```php
-$days = (int)($this->app->cfg->auth->reset_token_retention_days ?? 30);
+$days = (int)$this->app->cfg->vendor_package->reset_token_retention_days;
 ```
+
+Read cfg the package owns directly, without `??` or `isset()`; see the services guide, [Reading cfg](services-authoring-registration-usage.md#reading-cfg).
 
 Less good:
 

@@ -249,23 +249,14 @@ This ensures deterministic access validation, consistent with the CitOmni framew
 
 
 2. **CSRF validation**  
-   All POST requests must verify a submitted token using the Security service:  
+   All POST requests must be verified by the `csrf` service:
 ```php
-   if (!empty($this->app->cfg->security->csrf_protection)) {
-		$ok = $this->app->security->verifyCsrf(
-			(string)($this->app->request->post($this->app->security->csrfFieldName()) ?? '')
-		);
-
-		if (!$ok) {
-			$this->app->security->logFailedCsrf(__METHOD__, [
-				'path' => $this->app->request->path(),
-				'user' => $this->app->role->currentUserId(),
-			]);
-			http_response_code(403);
-			return;
-		}
-   }
+if (!$this->app->csrf->verify(['action' => __METHOD__])) {
+	$this->app->errorHandler->httpError(403, ['reason' => 'csrf_failed']);
+}
 ```
+
+The service skips verification while `security.csrf.enabled` is false and, when `security.csrf.log_failures` is on and the `log` service is registered, logs failures with request context itself; the adapter passes only its own context. Do not read `security.csrf.enabled` in the adapter.
 
 This must occur **before** any database mutation or file I/O.
 In templates, CSRF fields are injected automatically via:
@@ -277,7 +268,7 @@ In templates, CSRF fields are injected automatically via:
 </form>
 ```
 
-The TemplateEngine helper calls `$this->app->security->csrfToken()` internally, ensuring token issuance and reuse within the current session.
+The `$csrfField()` helper calls `$this->app->csrf->htmlField()`, which issues the session token on first use. It returns an empty string when the `csrf` service is not registered.
 
 3. **Post-Redirect-Get (PRG)**
    All mutating actions (create, update, delete) must conclude with a redirect to a safe GET endpoint, accompanied by a flash message.
@@ -380,7 +371,7 @@ CitOmni treats the admin interface as a privileged execution surface. The follow
 
 2. **CSRF protection**
    Every POST request must carry a valid CSRF token pair (`name` + `value`).
-   Tokens derive from the security service and are bound to session and origin.
+   Tokens are issued by the `csrf` service and stored in the session; verification also checks Fetch Metadata and Origin/Referer.
 
 3. **RoleGate enforcement**
    All admin controllers must call RoleGate early.

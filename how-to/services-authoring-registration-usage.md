@@ -314,21 +314,24 @@ Config merge rule:
 Deep associative merge, last wins.
 ```
 
-### Safe cfg access
+### Reading cfg
 
-Example leaf-level read:
-
-```php
-$timezone = (string)($this->app->cfg->locale->timezone ?? 'UTC');
-```
-
-Missing nodes are safe with `??` at any depth:
+A direct read throws `\OutOfBoundsException` at the first missing key, at any depth:
 
 ```php
-$value = (string)($this->app->cfg->unknown->key ?? 'fallback');
+$value = $this->app->cfg->unknown->key; // throws: Unknown cfg key: 'unknown'
 ```
 
-`Cfg` implements `__isset()`, so `??` checks every node on the path before it reads it, and falls back to the default when any of them is missing. Only a direct read without `??`, such as `$this->app->cfg->unknown->key`, throws `\OutOfBoundsException`.
+`??` and `isset()` are existence guards. `Cfg` implements `__isset()`, and PHP calls it for every node on the path, so neither form throws on a missing key. `??` also falls back when the value is `null`; `isset()` is true for a key whose value is `null`. The right operand of `??` is not guarded.
+
+Because a guard does not throw on a missing key, it also hides one. Choose the form by who owns the path:
+
+| Path | Read form |
+|---|---|
+| Own cfg: a path the package's Registry ships, or a key the app defines in its own config files | Direct, with no `??`, `isset()`, `empty()` or `?->` |
+| An option over own cfg | `$this->options['key'] ?? $this->app->cfg->pkg->key`, with no further `?? <default>` |
+| App cfg read by a package, another package's cfg, or a path that exists in one mode only | `?? <default>` |
+| A runtime-chosen key in an own map, such as a profile or storage name | `?? null`, then a specific exception |
 
 Use `isset()` only to branch on whether a node exists, for example before converting a whole node with `toArray()`.
 
@@ -344,7 +347,7 @@ $maxAge = (int)$this->app->cfg->authenticate->reauth->max_age_seconds;
 
 Inside citomni/authenticate, which ships the `authenticate.reauth.max_age_seconds` baseline, the read throws `\OutOfBoundsException` if that baseline goes missing, instead of falling back to a value the package never declared.
 
-Avoid defensive reads of package-owned cfg paths. `??` is one of them: `Cfg` implements `__isset()`, so `??` checks the path exactly as `isset()` does and hides a missing baseline behind its default:
+Do not guard package-owned cfg paths. `??` and `isset()` both test the path through `__isset()`, so either one hides a missing baseline: `??` behind its default, `isset()` behind a branch that never runs:
 
 ```php
 if (isset($this->app->cfg->authenticate)) {
@@ -362,13 +365,24 @@ When an option overrides package-owned cfg, put the option left of `??` and the 
 $this->suffix = (string)($this->options['suffix'] ?? $this->app->cfg->greeter->default_suffix);
 ```
 
-Cfg owned by another package may be absent. Read it with `??` and a default; no `isset()` guard is needed:
+Cfg owned by the app or another package, and a path that exists in one mode only, may be absent. Read it with `??` and a default; no `isset()` guard is needed:
 
 ```php
-$timeout = (int)($this->app->cfg->commerce->checkout->timeout ?? 30);
+$timeout  = (int)($this->app->cfg->commerce->checkout->timeout ?? 30);
+$timezone = (string)($this->app->cfg->locale->timezone ?? 'UTC');
 ```
 
-Baseline top-level nodes may be accessed directly when the vendor baseline guarantees them.
+A key chosen at runtime, such as a profile name passed to a method, may be absent from a map the package ships. Read it with `?? null` and throw a specific exception:
+
+```php
+// Assumes the package ships a greeter.profiles map; $name comes from the caller.
+// The shipped map is read directly, so a missing baseline still throws; only the lookup is guarded.
+$profiles = $this->app->cfg->greeter->profiles;
+$profile  = $profiles->{$name} ?? null;
+if ($profile === null) {
+	throw new \InvalidArgumentException("Unknown greeter profile: {$name}");
+}
+```
 
 ---
 
@@ -861,17 +875,17 @@ class ServiceName extends BaseService {
 
 `$this->app->cfg` returns nested `Cfg` objects for associative arrays.
 
-For scalar reads, use direct property access:
+For scalar reads, read the leaf itself. Own cfg is read directly; cfg owned by the app or another package gets a default (see [Reading cfg](#reading-cfg)):
 
 ```php
+$suffix  = (string)$this->app->cfg->greeter->default_suffix;
 $charset = (string)($this->app->cfg->locale->charset ?? 'UTF-8');
-````
+```
 
 When you need to merge a whole package-owned cfg node with options, convert the node first:
 
 ```php
-$raw = $this->app->cfg->greeter;
-$cfgNode = ($raw instanceof \CitOmni\Kernel\Cfg) ? $raw->toArray() : (\is_array($raw) ? $raw : []);
+$cfgNode = $this->app->cfg->greeter->toArray();
 
 $options = \CitOmni\Kernel\Arr::mergeAssocLastWins($cfgNode, $this->options);
 ```
@@ -1092,7 +1106,7 @@ Good:
 
 ```php
 protected function init(): void {
-	$this->enabled = (bool)($this->app->cfg->feature->enabled ?? false);
+	$this->suffix = (string)$this->app->cfg->greeter->default_suffix;
 }
 ```
 
@@ -1284,9 +1298,9 @@ Avoid circular service dependencies. If `A` resolves `B` in `init()` and `B` res
 * [ ] The constructor contract is respected.
 * [ ] `init()` is cheap and deterministic.
 * [ ] Package-owned cfg paths have baselines for all intermediate nodes.
-* [ ] Package-owned cfg is read directly, never as the left operand of `??` and never behind `isset()`.
+* [ ] Package-owned cfg is read directly, never as the left operand of `??` and never behind `isset()`. The one exception is a runtime-chosen key in a shipped map: `?? null`, then a specific exception.
 * [ ] An option that overrides cfg sits left of `??`, with the cfg read on the right.
-* [ ] Cross-package optional cfg reads use `??` with a default; `isset()` only branches on whether a node exists.
+* [ ] App cfg, another package's cfg and one-mode paths are read with `??` and a default; `isset()` only branches on whether a node exists.
 * [ ] Options are used only for construction-time wiring.
 * [ ] Public methods validate input.
 * [ ] Public methods document return contracts and exceptions.

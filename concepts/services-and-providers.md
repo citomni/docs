@@ -517,7 +517,7 @@ Each provider contributes to three orthogonal domains, none of which should be c
 | ----------------- | -------------------------- | ------------------------------------------------------------ | ------------------------------------------- |
 | **Configuration** | `CFG_HTTP / CFG_CLI`       | Declarative defaults and policy parameters                   | guard names, role thresholds, CSRF settings |
 | **Dispatch**      | `ROUTES_HTTP / COMMANDS_CLI` | Public contract: literal paths -> controller/action/method(s) (HTTP); command names -> command class (CLI) | `.html`, `.json`, or action-only routes; command names such as `cache:warm` |
-| **Services**      | `MAP_HTTP / MAP_CLI`       | Concrete implementations of policies or utilities            | `auth`, `role`, `security`, `response`, ...   |
+| **Services**      | `MAP_HTTP / MAP_CLI`       | Concrete implementations of policies or utilities            | `auth`, `role`, `csrf`, `response`, ...       |
 
 This separation mirrors the kernel's independent build stages
 (`App::buildConfig()`, `App::buildRoutes()` or `App::buildCommands()`, and `App::buildServices()`), each merged and cached deterministically.
@@ -574,7 +574,7 @@ class AdminBaseController extends BaseController {
 
 #### 8.1.3 CSRF integrity
 
-Cross-Site Request Forgery protection is managed by the `Security` service, which implements token issuance, verification, and structured failure logging.
+Cross-Site Request Forgery protection is provided by the `csrf` service (`\CitOmni\Http\Service\Csrf`), which issues tokens, verifies requests in layers (Fetch Metadata, Origin/Referer, token) and logs failures.
 Templates emit CSRF fields declaratively through the TemplateEngine service, ensuring seamless integration without runtime branching:
 
 ```html
@@ -584,32 +584,31 @@ Templates emit CSRF fields declaratively through the TemplateEngine service, ens
 </form>
 ```
 
-In POST endpoints, verification is explicit and context-aware:
+In POST endpoints, verification is explicit: the adapter calls the service, and routing does not verify on its own. The service reads the token from the request and checks whether protection is enabled, so the adapter reads neither the field nor the cfg flag:
 
 ```php
 public function loginPost(): void {
 
-	$token = (string)($this->app->request->post($this->app->security->csrfFieldName()) ?? '');
-
-	if (($this->app->cfg->security->csrf_protection ?? true) && !$this->app->security->verifyCsrf($token)) {
-		$this->app->security->logFailedCsrf('login_post');
-		$this->app->errorHandler->httpError(400, [
+	if (!$this->app->csrf->verify(['action' => 'login_post'])) {
+		$this->app->errorHandler->httpError(403, [
 			'reason'  => 'csrf_failed',
 			'message' => 'Invalid CSRF token.',
 		]);
-		return;
 	}
 
 	// continue with authentication and redirect
 }
 ```
 
+`requireValid()` is the fail-fast variant: it throws `\CitOmni\Http\Exception\CsrfVerificationException`, which carries the failure reason.
+
 **Operational semantics**
 
-* Field name derives from `cfg.security.csrf_field_name` or defaults to `csrf_token`.
-* Protection can be toggled via `cfg.security.csrf_protection`.
-* Token storage and verification are handled through the session service.
-* Failures are logged as JSON lines via the log service (default directory `var/logs/`, file name `csrf_failures.jsonl`), or to PHP's error log if the log service is unavailable.
+* Configuration lives under `security.csrf`, shipped by the citomni/http baseline. When `security.csrf.enabled` is false, `verify()` returns true and `requireValid()` returns.
+* Only methods listed in `security.csrf.protect_methods` are verified; other methods pass.
+* The form field is named by `security.csrf.field_name`, and the header by `security.csrf.header_name`.
+* The token is stored in the session. Issuing a token starts the session; verification never does.
+* With `security.csrf.log_failures` enabled, failures are written through the `log` service to the destination named by `security.csrf.log_channel`. Without the `log` service, nothing is logged.
 
 This approach preserves immutability and ensures all form endpoints operate under the same deterministic security contract.
 
@@ -661,7 +660,7 @@ Otherwise, route co-location within `Boot/Registry.php` remains the preferred pa
 | ---------------------- | ------------------------------------------------------- | -------------------------------------------- |
 | **Route placement**    | Co-locate in `Boot/Registry.php`                        | Minimizes I/O; aligns with green-by-design   |
 | **Authorization**      | Implement in base controller `init()`                   | Explicit, deterministic, zero reflection     |
-| **CSRF handling**      | Use `Security` service (`$csrfField()`, `verifyCsrf()`) | Centralized, auditable, log-integrated       |
+| **CSRF handling**      | Use `csrf` service (`$csrfField()`, `verify()`)         | Centralized, auditable, log-integrated       |
 | **Brute-force limits** | (future concern)                                        | Currently handled in `UserAccountModel` only |
 | **Route semantics**    | Pure, declarative data (no runtime logic or closures)   | Enables cacheable, constant-time routing     |
 
