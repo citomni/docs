@@ -47,7 +47,7 @@ The mode is passed to the `App` constructor and cannot change afterwards:
 $app = new \CitOmni\Kernel\App(CITOMNI_APP_PATH . '/config', \CitOmni\Kernel\Mode::CLI);
 ```
 
-* **The entry point chooses the mode.** `\CitOmni\Http\Kernel` constructs its `App` with `Mode::HTTP`, and `\CitOmni\Cli\Kernel` with `Mode::CLI`. Neither `App` nor the two kernels derive the mode from `PHP_SAPI`. PHP's built-in development server (`php -S`, SAPI `cli-server`) runs `public/index.php` in HTTP mode, and a CLI process can construct an `App` in `Mode::HTTP`.
+* **The entry point chooses the mode.** `\CitOmni\Http\Kernel` constructs its `App` with `Mode::HTTP`, and `\CitOmni\Cli\Kernel` with `Mode::CLI`. Neither `App` nor the two kernels derive the mode from `PHP_SAPI`, so a CLI process can construct an `App` in `Mode::HTTP`.
 * **`App` does not expose its mode.** The mode is a private property without an accessor. Code that must behave differently per mode is registered per mode (`MAP_HTTP`, `MAP_CLI`, `ROUTES_HTTP`, `COMMANDS_CLI`) or checks a capability such as `$app->hasService('request')` (Section 7).
 * **Each mode needs its own mode package.** `Mode::HTTP` reads `\CitOmni\Http\Boot\Registry`, and `Mode::CLI` reads `\CitOmni\Cli\Boot\Registry`. Neither mode references the other package, so an application may install only `citomni/http` or only `citomni/cli`.
 
@@ -435,7 +435,7 @@ CitOmni runs in two execution shapes, and each mode matches one of them:
 | Input | Superglobals: Server variables, query, body, cookies, files | `argv` |
 | Output | Status line, headers, body | STDOUT, STDERR, exit code |
 | Failure | Error page or JSON response, logged; the request ends | Message on STDERR, logged; exit code 1 |
-| Typical host | PHP-FPM behind a web server, Apache mod_php, `php -S` in development | Shell, cron, deploy scripts, worker processes |
+| Typical host | PHP-FPM behind a web server, Apache mod_php | Shell, cron, deploy scripts, worker processes |
 
 The shapes differ in input, output, failure semantics, and lifecycle, which is why each has its own kernel, dispatcher, and error handler. Everything else is built inside one of them. JSON APIs, webhooks, and HTML pages are HTTP routes. Scheduled tasks, imports, deploy steps, and workers are CLI commands. Capabilities that both need are services, operations, or providers.
 
