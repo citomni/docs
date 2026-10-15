@@ -534,13 +534,16 @@ Operation owns orchestration and application-level decision logic.
 Repository owns persistence and SQL.
 
 ### Output Contract
-Operation returns domain-shaped arrays.
+Operation returns domain-shaped arrays, with a status when the outcome can vary.
 
-- It does not return HTTP Response objects.
+- It returns `void` instead when success has nothing to report and every failure throws.
+- It returns `never` when it cannot return normally, such as a supervisor loop that runs until the process stops.
+- It returns a `\Generator` only when the caller must consume results one at a time; each yielded value is a domain-shaped array.
+- It does not build HTTP Response objects. A value returned by an adapter's callback, such as a protocol library's response, may pass through a result array; the Operation never reads or changes it.
 - It does not return CLI exit codes.
 - It does not return TemplateEngine artifacts.
 
-Adapters translate domain-shaped arrays into transport-specific outputs.
+Adapters translate domain-shaped results into transport-specific outputs.
 
 This rule prevents accidental coupling between application logic and transport.
 
