@@ -486,7 +486,7 @@ declare(strict_types=1);
 
 namespace Vendor\Package\Boot;
 
-final class Registry {
+class Registry {
 	public const CFG_COMMON = [
 		'jobrunner' => [
 			'handlers' => [
@@ -581,7 +581,7 @@ namespace App\JobRunner;
 use CitOmni\JobRunner\Contract\JobHandlerInterface;
 use CitOmni\JobRunner\Value\JobContext;
 
-final class RebuildIndexJobHandler implements JobHandlerInterface {
+class RebuildIndexJobHandler implements JobHandlerInterface {
 	public function run(JobContext $context): array {
 		$payload = $context->payload();
 

@@ -547,7 +547,7 @@ namespace Vendor\Package\Boot;
  * - Keep every constant declarative: No I/O, no runtime branching, no environment reads.
  * - Routes and commands are dispatch maps, not cfg.
  */
-final class Registry {
+class Registry {
 	/** Services for HTTP and CLI. */
 	public const array MAP_COMMON = [
 		'greeter' => \Vendor\Package\Service\Greeter::class,
@@ -738,7 +738,7 @@ use CitOmni\Kernel\Service\BaseService;
  * - No I/O and no global state.
  * - Reject invalid public input with \InvalidArgumentException.
  */
-final class Greeter extends BaseService {
+class Greeter extends BaseService {
 	/** Text appended after the name, separated by a space; empty for none. */
 	private string $suffix;
 
@@ -819,7 +819,7 @@ use CitOmni\Kernel\Service\BaseService;
  * Rules:
  * - <Requirement every present and future member must meet.>
  */
-final class ServiceName extends BaseService {
+class ServiceName extends BaseService {
 	/** <What the value means, not where it is used.> */
 	private string $value;
 
@@ -1275,7 +1275,7 @@ Avoid circular service dependencies. If `A` resolves `B` in `init()` and `B` res
 
 ## 22) Authoring checklist
 
-* [ ] The class is `final` by default.
+* [ ] The class is not `final`, unless an exception in [CONVENTIONS.md](../contribute/CONVENTIONS.md) applies.
 * [ ] The class extends `CitOmni\Kernel\Service\BaseService`.
 * [ ] The namespace follows PSR-4.
 * [ ] The service has a small, clear responsibility.

@@ -224,7 +224,7 @@ $this->app->flash->add('info', 'Done'); // oldest evicted on overflow
 // src/Boot/Services.php
 namespace CitOmni\Http\Boot;
 
-final class Services {
+class Services {
 	public const MAP_HTTP = [
 		'flash' => \CitOmni\Http\Service\Flash::class,
 	];
@@ -293,7 +293,7 @@ Write the checks as a standalone suite under `tests/`, as described in the [CitO
 A: `set()` allows a natural "single value" bucket, while `add()` promotes to a list when needed. This keeps simple cases efficient and avoids unnecessary array allocations.
 
 **Q: Can we make caps configurable?**
-A: We deliberately keep caps as **class constants** to preserve invariant semantics across environments and avoid accidental environment-driven regressions. If you need different caps, subclass/override via the service map.
+A: We deliberately keep caps as **class constants** to preserve invariant semantics across environments and avoid accidental environment-driven regressions. `Flash` is final, so for different caps map the `flash` service id to a class of your own with the same public API.
 
 **Q: How does this relate to `Session::flash()` methods?**
 A: They are independent. Flash maintains its **own keys** and semantics to avoid coupling; you may use either in different layers of your app.

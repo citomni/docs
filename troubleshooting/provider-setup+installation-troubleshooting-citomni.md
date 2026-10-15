@@ -24,7 +24,7 @@
    ```
    vendor/vendor-name/pkg/src/Boot/Registry.php
    namespace Vendor\Pkg\Boot;
-   final class Registry { public const MAP_HTTP = [...]; ... }
+   class Registry { public const MAP_HTTP = [...]; ... }
    ```
 
 3. **Constants exist** - `Registry` actually defines the constants it needs (`CFG_*`, `MAP_*`, `ROUTES_HTTP`, `COMMANDS_CLI`) as **public const arrays**.
@@ -84,7 +84,7 @@ declare(strict_types=1);
 
 namespace Vendor\Pkg\Boot;
 
-final class Registry {
+class Registry {
   public const CFG_HTTP = [ /* deep, last-wins */ ];
   public const MAP_HTTP = [ /* id => FQCN or ['class'=>..., 'options'=>...] */ ];
   public const ROUTES_HTTP = [ /* path-keyed, last-wins */ ];
@@ -199,7 +199,7 @@ declare(strict_types=1);
 
 namespace Vendor\PkgA\Boot;
 
-final class Registry {
+class Registry {
   public const CFG_HTTP = ['featureA' => ['enabled' => true]];
   public const MAP_HTTP = ['greeter' => \Vendor\PkgA\Service\Greeter::class];
   public const ROUTES_HTTP = [
@@ -253,7 +253,7 @@ If your provider's IDs are missing, go back to §0 (autoload & FQCN).
 | Old pattern                                           | New pattern                                                        |
 | ----------------------------------------------------- | ------------------------------------------------------------------ |
 | `src/Provider/Services.php`                           | `src/Boot/Registry.php`                                            |
-| `namespace Vendor\Pkg\Provider; final class Services` | `namespace Vendor\Pkg\Boot; final class Registry`                  |
+| `namespace Vendor\Pkg\Provider; class Services` | `namespace Vendor\Pkg\Boot; class Registry`                  |
 | `MAP_HTTP`, `CFG_HTTP` on *Services.php*              | Put **all** `CFG_*`, `MAP_*`, `ROUTES_HTTP`, `COMMANDS_CLI` on **Registry** |
 | Implicit route ingestion                              | **Always** `ROUTES_HTTP` (path-keyed, last-wins)                   |
 | CLI `ROUTES_CLI`                                      | `COMMANDS_CLI` (command-name-keyed, last-wins)                     |
@@ -263,7 +263,7 @@ If your provider's IDs are missing, go back to §0 (autoload & FQCN).
 
 ```php
 namespace Vendor\Pkg\Provider;
-final class Services {
+class Services {
   public const MAP_HTTP = ['id' => \Vendor\Pkg\Service\Foo::class];
 }
 ```
@@ -272,7 +272,7 @@ final class Services {
 
 ```php
 namespace Vendor\Pkg\Boot;
-final class Registry {
+class Registry {
   public const MAP_HTTP = ['id' => \Vendor\Pkg\Service\Foo::class];
 }
 ```

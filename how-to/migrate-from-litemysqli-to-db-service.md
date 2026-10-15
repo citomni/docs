@@ -745,7 +745,7 @@ abstract class BaseModelLiteMySQLi {
 ```
 
 ```php
-final class UserRepository extends BaseModelLiteMySQLi {
+class UserRepository extends BaseModelLiteMySQLi {
 	public function getByEmail(string $email): ?array {
 		return $this->db->fetchRow(
 			'SELECT id, email, status FROM users WHERE email = ? LIMIT 1',
@@ -758,7 +758,7 @@ final class UserRepository extends BaseModelLiteMySQLi {
 ### After
 
 ```php
-final class UserRepository {
+class UserRepository {
 	public function __construct(private \CitOmni\Kernel\App $app) {
 	}
 

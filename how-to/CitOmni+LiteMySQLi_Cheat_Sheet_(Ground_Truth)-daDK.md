@@ -25,7 +25,7 @@ namespace App\Model;
 
 use CitOmni\Infrastructure\Model\BaseModelLiteMySQLi;
 
-final class UserModel extends BaseModelLiteMySQLi {
+class UserModel extends BaseModelLiteMySQLi {
 	public function findById(int $id): ?array {
 		return $this->db->fetchRow(
 			'SELECT * FROM users WHERE id = ? LIMIT 1',

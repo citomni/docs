@@ -121,7 +121,7 @@ namespace VendorName\MyProvider\Boot;
  * Rules:
  * - Constants only: No code runs here, and nothing reads the environment.
  */
-final class Registry {
+class Registry {
 
 	/** Cfg baseline for both modes (deep, last-wins). */
 	public const array CFG_COMMON = [
@@ -211,7 +211,7 @@ use CitOmni\Kernel\Service\BaseService;
  * - No I/O and no global state; compute immutable scalars in init().
  * - Reject invalid input with \InvalidArgumentException.
  */
-final class Greeter extends BaseService {
+class Greeter extends BaseService {
 	/** Text appended to every greeting; empty for none. */
 	private string $suffix;
 
@@ -263,7 +263,7 @@ declare(strict_types=1);
 
 namespace VendorName\MyProvider\Boot;
 
-final class Registry {
+class Registry {
 	/** Services for HTTP and CLI. */
 	public const array MAP_COMMON = [
 		'greeter' => \VendorName\MyProvider\Service\Greeter::class,
@@ -335,7 +335,7 @@ use CitOmni\Kernel\Controller\BaseController;
 /**
  * DemoController: HTTP adapter for the provider's demo routes.
  */
-final class DemoController extends BaseController {
+class DemoController extends BaseController {
 
 	/**
 	 * Run setup and guards that every action needs.
@@ -582,7 +582,7 @@ namespace VendorName\MyProvider\Boot;
  * Rules:
  * - Constants only: No code runs here, and nothing reads the environment.
  */
-final class Registry {
+class Registry {
 
 	/** Cfg baseline for both modes (deep, last-wins). */
 	public const array CFG_COMMON = [
@@ -647,7 +647,7 @@ use CitOmni\Kernel\Service\BaseService;
  * Rules:
  * - No I/O in init(); derive immutable scalars there and keep hot paths allocation-lean.
  */
-final class DemoService extends BaseService {
+class DemoService extends BaseService {
 
 	/** Text appended to every ping answer; empty for none. */
 	private string $suffix;
@@ -690,7 +690,7 @@ use CitOmni\Kernel\Controller\BaseController;
 /**
  * DemoController: HTTP adapter for the provider's demo page.
  */
-final class DemoController extends BaseController {
+class DemoController extends BaseController {
 
 	/**
 	 * Run setup and guards that every action needs.

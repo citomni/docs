@@ -208,7 +208,7 @@ declare(strict_types=1);
 
 namespace CitOmni\Admin\Boot;
 
-final class Registry {
+class Registry {
   public const ROUTES_HTTP = [
     '/admin/home.html' => [
       'controller'     => \CitOmni\Admin\Controller\DashboardController::class,

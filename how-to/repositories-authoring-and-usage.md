@@ -911,7 +911,7 @@ use CitOmni\Kernel\Repository\BaseRepository;
  * - Return stable array shapes or scalar persistence results.
  * - Leave workflow decisions to Operations.
  */
-final class UserRepository extends BaseRepository {
+class UserRepository extends BaseRepository {
 
 	/**
 	 * Find the authentication row for an email address.
@@ -1029,7 +1029,7 @@ use CitOmni\Kernel\Repository\BaseRepository;
  * - Return stable array shapes and scalar persistence results.
  * - Prefer narrow methods over catch-all persistence methods.
  */
-final class <RepositoryName> extends BaseRepository {
+class <RepositoryName> extends BaseRepository {
 
 	/**
 	 * <One-line summary, imperative.>
@@ -1319,7 +1319,7 @@ use CitOmni\Kernel\Controller\BaseController;
 /**
  * UserController: HTTP adapter for user pages.
  */
-final class UserController extends BaseController {
+class UserController extends BaseController {
 
 	/**
 	 * Render the signed-in user's page.
@@ -1363,7 +1363,7 @@ use CitOmni\Kernel\Operation\BaseOperation;
  *
  * Persistence belongs to UserRepository, and transport to the calling adapter.
  */
-final class ResetPassword extends BaseOperation {
+class ResetPassword extends BaseOperation {
 
 	/**
 	 * Store a new password hash for a user.
@@ -1429,7 +1429,7 @@ A: Yes, but only when appropriate. Prefer prepared statements and the narrow `Db
 ## 24) Authoring checklist
 
 * [ ] Class extends `BaseRepository`
-* [ ] Class is `final` by default
+* [ ] Class is not `final`, unless an exception in [CONVENTIONS.md](../contribute/CONVENTIONS.md) applies
 * [ ] Lives in `src/Repository/`
 * [ ] Constructor contract is `__construct(App $app)` via base class
 * [ ] Owns SQL and datastore IO only

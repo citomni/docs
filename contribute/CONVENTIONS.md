@@ -56,7 +56,7 @@ declare(strict_types=1);
 
 namespace Vendor\Package\Util;
 
-final class TextNormalizer {
+class TextNormalizer {
 	/**
 	 * Normalize surrounding whitespace in a value.
 	 *
@@ -69,7 +69,16 @@ final class TextNormalizer {
 }
 ```
 
-Only use `final` when the class is intentionally closed to extension or when a concrete invariant requires it. Conversely, do not create `protected` extension hooks or interfaces speculatively. A public extension point must have a reason and a documented contract.
+Classes are not `final`, so an application or another package can extend them. `final` is an exception that needs a concrete argument: extension would break security, an invariant or another explicit design requirement. When a final method is enough, the class stays open, like `MemberBaseController` in `citomni/authenticate`, whose final `init()` keeps a subclass from skipping the login check.
+
+Accepted exceptions:
+
+- Concrete admin and member controllers, which extend `AdminBaseController` (`citomni/admin`) and `MemberBaseController` (`citomni/authenticate`), are `final`.
+- Every class in `citomni/kernel` except its abstract `Base*` classes is `final`. The `Base*` classes are the extension points of the kernel.
+
+A `final` class that already exists elsewhere is not a conflict with this rule. Remove `final` when a task needs to extend that class, not as a side effect of other work.
+
+Conversely, do not create `protected` extension hooks or interfaces speculatively. A public extension point must have a reason and a documented contract.
 
 Do not reformat otherwise unrelated code in a functional change. A focused diff is easier to review and less likely to hide a regression.
 
@@ -156,7 +165,7 @@ declare(strict_types=1);
 
 namespace Vendor\Package\Boot;
 
-final class Registry {
+class Registry {
 	public const array MAP_COMMON = [
 		'exampleTool' => \Vendor\Package\Service\ExampleTool::class,
 	];

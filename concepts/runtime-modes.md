@@ -304,7 +304,7 @@ declare(strict_types=1);
 
 namespace Acme\Reports\Boot;
 
-final class Registry {
+class Registry {
 
 	// Defaults for cfg paths the package reads in both modes.
 	public const CFG_COMMON = [

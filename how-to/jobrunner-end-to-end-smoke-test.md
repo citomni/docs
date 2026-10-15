@@ -147,7 +147,7 @@ use CitOmni\JobRunner\Value\JobContext;
  *
  * @internal App-local smoke test only.
  */
-final class SleepJobHandler implements JobHandlerInterface {
+class SleepJobHandler implements JobHandlerInterface {
 	private const DEFAULT_SECONDS = 10;
 	private const DEFAULT_INTERVAL_MS = 500;
 	private const MIN_SECONDS = 1;
@@ -327,7 +327,7 @@ use CitOmni\Kernel\Command\BaseCommand;
  *
  * @internal App-local smoke test only.
  */
-final class StartSleepJobCommand extends BaseCommand {
+class StartSleepJobCommand extends BaseCommand {
 	private const JOB_TYPE = 'smoke.sleep';
 
 	/**

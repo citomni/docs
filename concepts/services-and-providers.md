@@ -118,7 +118,7 @@ A minimal provider exposes one class with constants:
 ```php
 namespace Vendor\Package\Boot;
 
-final class Registry {
+class Registry {
 	public const MAP_HTTP = [
 		'foo' => \Vendor\Package\Service\Foo::class,
 	];
@@ -222,7 +222,7 @@ declare(strict_types=1);
 
 namespace Vendor\Package\Boot;
 
-final class Routes {
+class Routes {
     /** @var array<string,array<string,mixed>> */
     public const MAP = [
         '/' => [
@@ -254,7 +254,7 @@ declare(strict_types=1);
 
 namespace Vendor\Package\Boot;
 
-final class Registry {
+class Registry {
     public const MAP_HTTP = [
         'auth' => \Vendor\Package\Service\AuthService::class,
     ];
@@ -391,7 +391,7 @@ declare(strict_types=1);
 
 namespace Vendor\Package\Boot;
 
-final class Registry
+class Registry
 {
     /** Service map (HTTP) */
     public const MAP_HTTP = [
@@ -942,7 +942,7 @@ declare(strict_types=1);
 
 namespace CitOmni\Auth\Boot;
 
-final class Registry
+class Registry
 {
     /** Service map (HTTP) */
     public const MAP_HTTP = [

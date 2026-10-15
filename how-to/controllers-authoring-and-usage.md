@@ -275,7 +275,7 @@ declare(strict_types=1);
 
 namespace Vendor\Package\Boot;
 
-final class Registry {
+class Registry {
 	public const ROUTES_HTTP = [
 		'/greeter' => [
 			'controller' => \Vendor\Package\Controller\GreeterController::class,
@@ -1336,7 +1336,7 @@ use CitOmni\Kernel\Controller\BaseController;
  * - Read through Repositories for trivial persistence; run anything non-trivial through Operations.
  * - No SQL and no multi-step domain orchestration.
  */
-final class AccountController extends BaseController {
+class AccountController extends BaseController {
 
 	/**
 	 * Run setup and guards that every action needs.
@@ -1383,7 +1383,7 @@ use App\Operation\AuthenticateUser;
 /**
  * AuthController: HTTP adapter for authentication routes.
  */
-final class AuthController extends BaseController {
+class AuthController extends BaseController {
 
 	/**
 	 * Render the login form, or process it and sign the user in.
@@ -1480,7 +1480,7 @@ use App\Operation\CreateApiToken;
 /**
  * ApiTokenController: HTTP adapter for token endpoints.
  */
-final class ApiTokenController extends BaseController {
+class ApiTokenController extends BaseController {
 
 	/**
 	 * Create an API token from a JSON request.
@@ -1554,7 +1554,7 @@ use App\Repository\InvoiceRepository;
 /**
  * InvoiceController: HTTP adapter for invoice endpoints.
  */
-final class InvoiceController extends BaseController {
+class InvoiceController extends BaseController {
 
 	/**
 	 * Download one of the signed-in user's invoice PDFs.
@@ -1607,7 +1607,7 @@ use CitOmni\Kernel\Controller\BaseController;
 /**
  * AuthController: HTTP adapter for authentication routes.
  */
-final class AuthController extends BaseController {
+class AuthController extends BaseController {
 
 	/**
 	 * Sign the user out and redirect to the login page.
@@ -1651,7 +1651,7 @@ use CitOmni\Kernel\Controller\BaseController;
 /**
  * GreeterController: Public HTTP adapter for greeting pages.
  */
-final class GreeterController extends BaseController {
+class GreeterController extends BaseController {
 
 	/**
 	 * Render a simple greeting page.
@@ -1680,7 +1680,7 @@ declare(strict_types=1);
 
 namespace Vendor\Package\Boot;
 
-final class Registry {
+class Registry {
 	public const ROUTES_HTTP = [
 		'/greeter' => [
 			'controller' => \Vendor\Package\Controller\GreeterController::class,
@@ -1924,7 +1924,7 @@ Correct fix:
 ## 40) Authoring checklist
 
 * [ ] Class extends `BaseController`
-* [ ] Class is `final` by default
+* [ ] Class is not `final`, unless an exception in [CONVENTIONS.md](../contribute/CONVENTIONS.md) applies
 * [ ] Namespace and location match CitOmni structure
 * [ ] No SQL in the Controller
 * [ ] No multi-step reusable business workflow in the Controller

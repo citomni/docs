@@ -22,7 +22,7 @@ namespace App\Util;
 
 use CitOmni\Kernel\App;
 
-final class InputNormalizer {
+class InputNormalizer {
 
 	/**
 	 * Normalize a UI decimal string to a DB dot-decimal string (DECIMAL-safe).
@@ -115,7 +115,7 @@ namespace App\Model;
 use CitOmni\Infrastructure\Model\BaseModelLiteMySQLi;
 use App\Util\InputNormalizer;
 
-final class ExampleModel extends BaseModelLiteMySQLi {
+class ExampleModel extends BaseModelLiteMySQLi {
 
 	private const TABLE = 'example_table';
 
@@ -198,7 +198,7 @@ namespace App\Http\Controller;
 
 use CitOmni\Kernel\Controller\BaseController;
 
-final class ExampleController extends BaseController {
+class ExampleController extends BaseController {
 
 	public function edit(): void {
 		// GET page: pull flash and render template.
