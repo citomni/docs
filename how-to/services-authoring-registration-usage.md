@@ -322,25 +322,31 @@ Use `isset()` only to branch on whether a node exists, for example before conver
 
 Packages must ship cfg baselines via `Registry::CFG_COMMON`, or `Registry::CFG_HTTP` / `Registry::CFG_CLI` for mode-specific values, for every cfg path they read at runtime.
 
-That makes package-owned intermediate keys guaranteed.
-
-Good:
+That makes package-owned keys guaranteed, intermediate nodes included, so the package reads them directly:
 
 ```php
-$maxAge = (int)($this->app->cfg->authenticate->reauth->max_age_seconds ?? 300);
+$maxAge = (int)$this->app->cfg->authenticate->reauth->max_age_seconds;
 ```
 
-This is safe when `authenticate.reauth` is guaranteed by the package registry.
+Inside citomni/authenticate, which ships the `authenticate.reauth.max_age_seconds` baseline, the read throws `\OutOfBoundsException` if that baseline goes missing, instead of falling back to a value the package never declared.
 
-Avoid defensive `isset()` around package-owned cfg paths:
+Avoid defensive reads of package-owned cfg paths. `??` is one of them: `Cfg` implements `__isset()`, so `??` checks the path exactly as `isset()` does and hides a missing baseline behind its default:
 
 ```php
 if (isset($this->app->cfg->authenticate)) {
 	// Usually a smell inside citomni/authenticate itself.
 }
+
+$maxAge = (int)($this->app->cfg->authenticate->reauth->max_age_seconds ?? 300);
 ```
 
 If a package-owned path is missing, fix the package baseline instead of adding defensive reads.
+
+When an option overrides package-owned cfg, put the option left of `??` and the cfg read right of it. `??` guards only its left operand, so a set option wins, an empty string included, and the cfg read still throws on a missing baseline whenever it runs:
+
+```php
+$this->suffix = (string)($this->options['suffix'] ?? $this->app->cfg->greeter->default_suffix);
+```
 
 Cfg owned by another package may be absent. Read it with `??` and a default; no `isset()` guard is needed:
 
@@ -729,21 +735,19 @@ use CitOmni\Kernel\Service\BaseService;
  * - Reject invalid public input with \InvalidArgumentException.
  */
 final class Greeter extends BaseService {
-	private string $suffix = '';
+	/** Text appended after the name, separated by a space; empty for none. */
+	private string $suffix;
 
 	/**
 	 * Resolve the greeting suffix once per instance.
 	 *
 	 * Behavior:
-	 * - A non-empty suffix option wins over cfg greeter.default_suffix.
+	 * - The suffix option wins over cfg greeter.default_suffix.
 	 *
 	 * @return void
 	 */
 	protected function init(): void {
-		$cfgSuffix = (string)($this->app->cfg->greeter->default_suffix ?? '');
-		$optSuffix = (string)($this->options['suffix'] ?? '');
-
-		$this->suffix = $optSuffix !== '' ? $optSuffix : $cfgSuffix;
+		$this->suffix = (string)($this->options['suffix'] ?? $this->app->cfg->greeter->default_suffix);
 	}
 
 	/**
@@ -812,26 +816,20 @@ use CitOmni\Kernel\Service\BaseService;
  * - <Requirement every present and future member must meet.>
  */
 final class ServiceName extends BaseService {
-	private string $value = '';
+	/** <What the value means, not where it is used.> */
+	private string $value;
 
 	/**
 	 * Resolve immutable state once per instance.
 	 *
 	 * Behavior:
-	 * - A non-empty value option wins over cfg service_name.value.
+	 * - The value option wins over cfg service_name.value.
 	 *
 	 * @return void
 	 */
 	protected function init(): void {
-		// For package-owned cfg, ship the baseline in Registry::CFG_COMMON.
-		$cfgValue = (string)($this->app->cfg->service_name->value ?? '');
-
-		// Cfg owned by another package may be absent; ?? short-circuits through missing nodes:
-		// $cfgValue = (string)($this->app->cfg->optional_package->feature->value ?? $cfgValue);
-
-		$optValue = (string)($this->options['value'] ?? '');
-
-		$this->value = $optValue !== '' ? $optValue : $cfgValue;
+		// Package-owned cfg is the right operand, which ?? does not guard, so a missing baseline throws.
+		$this->value = (string)($this->options['value'] ?? $this->app->cfg->service_name->value);
 	}
 
 	/**
@@ -1279,6 +1277,8 @@ Avoid circular service dependencies. If `A` resolves `B` in `init()` and `B` res
 * [ ] The constructor contract is respected.
 * [ ] `init()` is cheap and deterministic.
 * [ ] Package-owned cfg paths have baselines for all intermediate nodes.
+* [ ] Package-owned cfg is read directly, never as the left operand of `??` and never behind `isset()`.
+* [ ] An option that overrides cfg sits left of `??`, with the cfg read on the right.
 * [ ] Cross-package optional cfg reads use `??` with a default; `isset()` only branches on whether a node exists.
 * [ ] Options are used only for construction-time wiring.
 * [ ] Public methods validate input.
