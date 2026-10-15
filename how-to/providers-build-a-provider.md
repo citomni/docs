@@ -6,7 +6,7 @@
 
 **Document type:** Implementation Guide
 **Version:** 1.0
-**Applies to:** CitOmni ≥ 8.2
+**Applies to:** CitOmni on PHP 8.5+
 **Audience:** Provider authors, app integrators, and core contributors
 **Status:** Stable and canonical
 **Author:** CitOmni Core Team
@@ -36,17 +36,19 @@ var/cache/services.{http|cli}.php
 
 That's the whole trick: **constants in -> deterministic caches out**.
 
+For a complete, tested provider that applies this guide, see [citomni/demo-provider](https://github.com/citomni/demo-provider). Its `src/README.md` holds the cross-cutting rules, and each layer folder has a README with that layer's rules and a working example.
+
 ---
 
 ## 2. Prerequisites
 
-* PHP ≥ 8.2, PSR-4 autoloading
+* PHP 8.5+, PSR-4 autoloading
 * CitOmni kernel and (optionally) mode packages installed in the *application*
 * Comfortable with the concepts in:
 
-  * *Runtime Modes - CitOmni Application Kernel*
-  * *Routing Layer - CitOmni HTTP Runtime*
-  * *CitOmni Provider Packages (Design, Semantics, and Best Practices)*
+  * [Runtime Modes - CitOmni Application Kernel](../concepts/runtime-modes.md)
+  * [Routing Layer - CitOmni HTTP Runtime](../concepts/routing-layer-http-runtime.md)
+  * [CitOmni Provider Packages (Design, Semantics, and Best Practices)](../concepts/services-and-providers.md)
 
 ---
 
@@ -55,6 +57,9 @@ That's the whole trick: **constants in -> deterministic caches out**.
 ```
 vendor-name/my-provider/
 ├─ composer.json
+├─ templates/                        (only if you render templates)
+│  └─ public/
+│     └─ demo.html
 └─ src/
    ├─ Boot/
    │  └─ Registry.php                (constants only: CFG_*, ROUTES_*, MAP_*)
@@ -74,7 +79,7 @@ vendor-name/my-provider/
   "type": "library",
   "license": "MIT",
   "require": {
-    "php": ">=8.2",
+    "php": "^8.5",
     "citomni/kernel": "^1.0"
   },
   "autoload": {
@@ -90,7 +95,7 @@ If you expose HTTP controllers or rely on HTTP services, add:
 
 ```json
 "require": {
-  "php": ">=8.2",
+  "php": "^8.5",
   "citomni/kernel": "^1.0",
   "citomni/http": "^1.0"
 }
@@ -119,28 +124,40 @@ namespace VendorName\MyProvider\Boot;
 final class Registry {
 
 	/** Cfg baseline for both modes (deep, last-wins). */
-	public const CFG_COMMON = [
+	public const array CFG_COMMON = [
 		'my_provider' => [
 			'enabled'   => true,                        // true turns the provider's features on.
 			'api_base'  => 'https://api.example.test',  // Base URL of the remote API.
 			'cache_ttl' => 120,                         // Seconds that fetched data stays cached.
+			'demo'      => [
+				'suffix' => '',  // Text appended to every ping answer, such as " - from My App"; empty for none.
+			],
+		],
+	];
+
+	/** Cfg baseline for HTTP: The template layer that the package's routes render from. */
+	public const array CFG_HTTP = [
+		'view' => [
+			'template_layers' => [
+				'vendor-name/my-provider' => \CITOMNI_APP_PATH . '/vendor/vendor-name/my-provider/templates',  // Templates of this package.
+			],
 		],
 	];
 
 	/** Services for both modes (ID -> class or shape; left-wins per merge step). */
-	public const MAP_COMMON = [
+	public const array MAP_COMMON = [
 		// Bare FQCN: constructor receives (App $app)
 		'demo' => \VendorName\MyProvider\Service\DemoService::class,
 
-		// With options: constructor receives (App $app, array $options)
+		// With options: constructor receives (App $app, array $options); the suffix option wins over cfg
 		'demoWithOpts' => [
 			'class'   => \VendorName\MyProvider\Service\DemoService::class,
-			'options' => ['mode' => 'strict']
+			'options' => ['suffix' => ' - strict'],
 		],
 	];
 
 	/** HTTP routes (path-keyed, last-wins; remember: suffix (.html/.json) is the public contract) */
-	public const ROUTES_HTTP = [
+	public const array ROUTES_HTTP = [
 		'/demo.html' => [
 			'controller'    => \VendorName\MyProvider\Controller\DemoController::class,
 			'action'        => 'index',
@@ -156,15 +173,16 @@ final class Registry {
 	];
 
 	// Mode-specific contributions, only for what depends on one mode:
-	// public const CFG_HTTP = [...];
-	// public const CFG_CLI = [...];
-	// public const MAP_HTTP = [...];
-	// public const MAP_CLI = [...];
-	// public const COMMANDS_CLI = [...];
+	// public const array CFG_CLI = [...];
+	// public const array MAP_HTTP = [...];
+	// public const array MAP_CLI = [...];
+	// public const array COMMANDS_CLI = [...];
 }
 ```
 
 > Keep keys **associative**; avoid numeric lists unless you intend downstream replacement.
+
+> A package that renders templates registers its layer under `view.template_layers` in `CFG_HTTP`, because `view` is cfg of citomni/http and only HTTP mode renders. A layer slug is `vendor/package`; `app` is reserved for the application's own templates. Template references then use `relative/path.html@vendor-name/my-provider`.
 
 ---
 
@@ -247,12 +265,12 @@ namespace VendorName\MyProvider\Boot;
 
 final class Registry {
 	/** Services for HTTP and CLI. */
-	public const MAP_COMMON = [
+	public const array MAP_COMMON = [
 		'greeter' => \VendorName\MyProvider\Service\Greeter::class,
 	];
 
 	/** Cfg baseline for both modes. */
-	public const CFG_COMMON = [
+	public const array CFG_COMMON = [
 		'my_provider' => [
 			'greeter' => [
 				'suffix' => '',  // Text appended to every greeting, such as " - from My App"; empty for none.
@@ -385,17 +403,24 @@ return [
 
 ### 7.2 Warm caches
 
-Call your warm-up (HTTP mode shown):
+From the app root, in a deploy step:
 
-```php
-// e.g., in a deploy step or admin tool:
-$this->app->warmCache(overwrite: true, opcacheInvalidate: true);
+```text
+php bin/citomni cache:warm
+```
 
-// Resulting artifacts:
+The `cache:warm` command of citomni/cli warms CLI first, then HTTP when citomni/http is installed (`--mode=cli|http|all`, `--env=<env>`):
+
+```text
+var/cache/cfg.cli.php
+var/cache/commands.cli.php
+var/cache/services.cli.php
 var/cache/cfg.http.php
 var/cache/routes.http.php
 var/cache/services.http.php
 ```
+
+`$this->app->warmCache()` writes only the three files of one mode: the mode of the App it is called on.
 
 After warming, the app boots and routes without including provider boot files (the kernel reads atomic cache files only).
 
@@ -416,7 +441,7 @@ return [
 	// Or just tweak options:
 	'demoWithOpts' => [
 		'class'   => \VendorName\MyProvider\Service\DemoService::class,
-		'options' => ['mode' => 'paranoid'],
+		'options' => ['suffix' => ' - paranoid'],
 	],
 ];
 ```
@@ -446,7 +471,7 @@ return [
 
 ```php
 <?php
-use App\Controller\BetterDemoController;
+use App\Http\Controller\BetterDemoController;
 
 return [
 	'/demo.html' => [
@@ -477,7 +502,7 @@ Re-warm caches after any of the above.
   ```
   '/feature' => ['methods' => ['POST']]
   ```
-* Regex routes go under a `regex` list **only if necessary**; otherwise keep routing simple and literal.
+* Placeholder routes such as `/user/{id}` go under the `regex` key **only if necessary**; otherwise keep routing simple and literal.
 * The router raises 404/405/5xx via the central **ErrorHandler**. Do not define "error routes."
 
 ---
@@ -503,14 +528,17 @@ Let exceptions and PHP errors bubble:
 * **Overrides**: add tests proving app-side `services.php` wins for the same ID.
 * **Purity**: require `Boot/Registry.php` and assert no side effects (no output, no globals, no function calls).
 
+Write the checks as standalone suites under `tests/`, as described in the [CitOmni Testing Guide](../contribute/testing-guide.md). The `tests/` folder of [citomni/demo-provider](https://github.com/citomni/demo-provider) shows such suites for a provider.
+
 ---
 
 ## 12. Performance notes
 
 * Constants only in `Boot/Registry.php`.
 * Constructors should be cheap; defer I/O till first use.
-* Caches are **atomic** `return [ ... ];` files; safe for OPcache with `validate_timestamps=0`.
-* Warming any cache does not require warming the others, but warming **all three** is recommended after provider changes.
+* Caches are **atomic** `return [ ... ];` files, written through a temp file and a rename.
+* Warm the caches after every provider change; the App uses existing cache files without comparing them with the Registry.
+* With `opcache.validate_timestamps=0`, OPcache invalidation from the CLI does not reach the web server. Reload PHP-FPM or the web server after `cache:warm`, or use the HMAC-protected `POST /_system/reset-cache` of citomni/http and warm again.
 
 ---
 
@@ -529,7 +557,8 @@ Let exceptions and PHP errors bubble:
 * [ ] Services follow `__construct(App $app, array $options = [])`.
 * [ ] Routes include correct suffixes (`.html` / `.json`) where applicable.
 * [ ] Add provider FQCN to the app's `/config/providers.php`.
-* [ ] Rebuild caches: cfg, routes, services.
+* [ ] Register the template layer under `view.template_layers` in `CFG_HTTP` when the package renders templates.
+* [ ] Rebuild caches: `php bin/citomni cache:warm`.
 * [ ] Write unit tests for services and route resolution.
 * [ ] Document your public service IDs and config keys.
 
@@ -556,7 +585,7 @@ namespace VendorName\MyProvider\Boot;
 final class Registry {
 
 	/** Cfg baseline for both modes (deep, last-wins). */
-	public const CFG_COMMON = [
+	public const array CFG_COMMON = [
 		'my_provider' => [
 			'enabled'   => true,  // true turns the provider's features on.
 			'cache_ttl' => 60,    // Seconds that fetched data stays cached.
@@ -566,8 +595,17 @@ final class Registry {
 		],
 	];
 
+	/** Cfg baseline for HTTP: The template layer that the package's routes render from. */
+	public const array CFG_HTTP = [
+		'view' => [
+			'template_layers' => [
+				'vendor-name/my-provider' => \CITOMNI_APP_PATH . '/vendor/vendor-name/my-provider/templates',  // Templates of this package.
+			],
+		],
+	];
+
 	/** Services for both modes (ID -> class or ['class'=>..., 'options'=>...]). */
-	public const MAP_COMMON = [
+	public const array MAP_COMMON = [
 		// Bare class (constructor receives App, []):
 		'demo' => \VendorName\MyProvider\Service\DemoService::class,
 
@@ -579,7 +617,7 @@ final class Registry {
 	];
 
 	/** HTTP routes (path-keyed, last-wins) */
-	public const ROUTES_HTTP = [
+	public const array ROUTES_HTTP = [
 		'/demo.html' => [
 			'controller'    => \VendorName\MyProvider\Controller\DemoController::class,
 			'action'        => 'index',
@@ -708,15 +746,10 @@ return [
 ];
 ```
 
-**Deploy step (warm caches per mode):**
+**Deploy step (warm caches for both modes):**
 
-* `var/cache/cfg.http.php`
-* `var/cache/routes.http.php`
-* `var/cache/services.http.php`
-
-```php
-// Anywhere in your deploy/bootstrap script:
-$this->app->warmCache(overwrite: true, opcacheInvalidate: true);
+```text
+php bin/citomni cache:warm
 ```
 
 Then visit **`/demo.html`**.

@@ -1,4 +1,4 @@
-# CitOmni Services - Authoring, Registration, and Usage (PHP 8.2+)
+# CitOmni Services - Authoring, Registration, and Usage (PHP 8.5+)
 
 > **Low overhead. High performance. Predictable by design.**
 
@@ -10,7 +10,7 @@ It covers both reusable provider packages and app-local service overrides throug
 
 **Document type:** Technical Guide  
 **Version:** 1.1  
-**Applies to:** CitOmni PHP 8.2+  
+**Applies to:** CitOmni PHP 8.5+  
 **Audience:** Application and provider developers  
 **Status:** Stable and foundational  
 **Author:** CitOmni Core Team
@@ -549,19 +549,19 @@ namespace Vendor\Package\Boot;
  */
 final class Registry {
 	/** Services for HTTP and CLI. */
-	public const MAP_COMMON = [
+	public const array MAP_COMMON = [
 		'greeter' => \Vendor\Package\Service\Greeter::class,
 	];
 
 	/** Cfg baseline for both modes. */
-	public const CFG_COMMON = [
+	public const array CFG_COMMON = [
 		'greeter' => [
 			'default_suffix' => '- from cfg',  // Text appended to every greeting after a space; empty for none.
 		],
 	];
 
 	/** HTTP routes. */
-	public const ROUTES_HTTP = [
+	public const array ROUTES_HTTP = [
 		'/greeter' => [
 			'controller' => \Vendor\Package\Controller\GreeterController::class,
 			'action' => 'index',
@@ -572,7 +572,7 @@ final class Registry {
 	];
 
 	/** CLI commands. */
-	public const COMMANDS_CLI = [
+	public const array COMMANDS_CLI = [
 		'greeter:say' => [
 			'command' => \Vendor\Package\Command\GreeterSayCommand::class,
 			'description' => 'Print a greeting',
@@ -1184,20 +1184,20 @@ vendor/package/src/Boot/Registry.php
 Declare only the constants the package needs. Services and cfg that both modes use:
 
 ```php
-public const MAP_COMMON = [...];
-public const CFG_COMMON = [...];
+public const array MAP_COMMON = [...];
+public const array CFG_COMMON = [...];
 ```
 
 Mode-specific services or cfg, routes and commands only when the package has them:
 
 ```php
-public const MAP_HTTP = [...];
-public const CFG_HTTP = [...];
-public const ROUTES_HTTP = [...];
+public const array MAP_HTTP = [...];
+public const array CFG_HTTP = [...];
+public const array ROUTES_HTTP = [...];
 
-public const MAP_CLI = [...];
-public const CFG_CLI = [...];
-public const COMMANDS_CLI = [...];
+public const array MAP_CLI = [...];
+public const array CFG_CLI = [...];
+public const array COMMANDS_CLI = [...];
 ```
 
 ### When should I use `/config/services.php`?
