@@ -12,7 +12,7 @@
 * **Audience:** Application developers, provider authors, and framework developers
 * **Status:** Stable, authoritative
 * **Document type:** Reference
-* **Verified against:** `citomni/kernel` at `959f8a4` (`src/Cfg.php`, `src/App.php`) on PHP 8.5.9
+* **Verified by:** `tests/cfg/run.php` in `citomni/kernel`, one case per behavior statement
 
 ---
 
@@ -51,7 +51,7 @@ If this document and `src/Cfg.php` disagree, the source shows what happens. Repo
 
 Property syntax (`$cfg->a`) and array syntax (`$cfg['a']`) behave the same for every read of a node in this section.
 
-Where a statement names a PHP warning, notice, or deprecation, it states what PHP raises. What the active error handler then does with it is outside this document, except where B21 says otherwise.
+Where a statement names a PHP warning or notice, it states what PHP raises. What the active error handler then does with it is outside this document.
 
 ### 3.1 The root
 
@@ -102,24 +102,20 @@ For `??`, `isset()` and `empty()`, PHP asks each node whether the next key exist
 
 **B17.** A node is an object, not an array:
 
-* `(array)` on a node returns the object's internal properties, not the stored data. On an empty node the result has two entries.
+* `(array)` on a node returns the object's internal properties, not the stored data. On an empty node the result is not `[]`.
 * Array functions such as `\in_array()` and `\array_map()` throw `\TypeError` when given a node.
 
 ### 3.6 Writes
 
-**B18.** Assigning `$app->cfg` from outside `App` throws `\Error`, because the property is readonly.
+**B18.** Assigning `$app->cfg` after construction throws `\Error`, because the property is readonly.
 
 **B19.** A write or `unset()` with array syntax throws `\LogicException` with the message `Cfg is read-only.`
 
 **B20.** Changing a list obtained through a read, such as `$cfg->a->list[] = 'x'`, changes nothing. PHP raises the notice `Indirect modification of overloaded property`.
 
-**B21.** Known defect: a write with property syntax, such as `$cfg->a->key = 'x'`, is not refused.
+**B21.** A write with property syntax, such as `$cfg->a->key = 'x'`, throws `\LogicException` with the message `Cfg is read-only.` and changes nothing. This holds for an existing key, a new key, and a key that holds a node.
 
-* PHP creates a dynamic property on the node and raises `E_DEPRECATED`: `Creation of dynamic property CitOmni\Kernel\Cfg::$key is deprecated`.
-* From then on, a property-syntax read of that key yields the written value, while an array-syntax read yields the stored value.
-* When the error handler turns the deprecation into an exception, the exception propagates and the write has still taken effect.
-
-**B22.** An `unset()` with property syntax, such as `unset($cfg->a->key)`, changes nothing and raises no notice. The key stays readable.
+**B22.** An `unset()` with property syntax, such as `unset($cfg->a->key)`, throws `\LogicException` with the message `Cfg is read-only.` and changes nothing.
 
 ---
 
@@ -197,7 +193,7 @@ $allowedHosts = $value instanceof Cfg ? $value->toArray() : $value;
 
 **R7.** A package ships a baseline for every path it reads: in `CFG_COMMON`, or in `CFG_HTTP` or `CFG_CLI` when only that mode reads it. A missing baseline is fixed in the Registry (R1).
 
-**R8.** Never write to cfg. B18-B22 describe what happens when code tries; B21 is not refused, so the rule is the only protection.
+**R8.** Never write to cfg. B18-B22 describe what happens when code tries.
 
 ### 4.3 Decision table
 
@@ -223,7 +219,13 @@ $allowedHosts = $value instanceof Cfg ? $value->toArray() : $value;
 
 ## 6. Verification
 
-Every behavior statement B1-B22 and the code forms of R2, R5, and R6 were executed against `citomni/kernel` at `959f8a4`, `src/Cfg.php` and `src/App.php`, on PHP 8.5.9. Verify them again after any change to `src/Cfg.php` or to `App::$cfg`.
+[`tests/cfg/run.php`](https://github.com/citomni/kernel/blob/main/tests/cfg/run.php) in `citomni/kernel` has a case named after every behavior statement B1-B22, and after the code forms of R2, R5, and R6. Run it in the kernel package root:
+
+```bash
+php tests/cfg/run.php
+```
+
+A failing case means that this document and the code disagree. The source shows what happens; correct the document or the code, and keep the case and the statement in step.
 
 ---
 
