@@ -18,6 +18,7 @@ They are intended to be authoritative technical documentation for developers who
 
 ## Index
 
+- [Cfg access](./cfg-access.md)
 - [Flash service](./flash-service.md)
 - [Log service](./log-service.md)
 - [Router reference light](./router-reference-light.md)

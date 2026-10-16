@@ -240,7 +240,7 @@ $maxAge = (int)$this->app->cfg->authenticate->reauth->max_age_seconds;
 $timezone = (string)($this->app->cfg->locale->timezone ?? 'UTC');
 ```
 
-See [Reading cfg](../how-to/services-authoring-registration-usage.md#reading-cfg) for the full rule.
+See [Cfg access](../reference/cfg-access.md) for the full behavior and rules.
 
 ### 5.3 Dispatch maps
 

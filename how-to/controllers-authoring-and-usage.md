@@ -414,7 +414,7 @@ $captchaEnabled = (bool)($this->app->cfg->security->captcha_protection ?? true);
 $trustProxy     = (bool)($this->app->cfg->http->trust_proxy ?? false);
 ```
 
-A Controller inside a provider package reads its own package's keys directly. See [Reading cfg](services-authoring-registration-usage.md#reading-cfg) for the full rule.
+A Controller inside a provider package reads its own package's keys directly. See [Cfg access](../reference/cfg-access.md) for the full behavior and rules.
 
 CitOmni treats config as runtime policy and keeps it separate from route tables and service wiring.
 

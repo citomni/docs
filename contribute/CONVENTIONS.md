@@ -225,6 +225,8 @@ $maxAge = (int)$this->app->cfg->authenticate->reauth->max_age_seconds;
 $timezone = (string)($this->app->cfg->locale->timezone ?? 'UTC');
 ```
 
+The complete behavior and rules are in [Cfg access](../reference/cfg-access.md).
+
 Service precedence is separate and also deterministic. Newer layers replace earlier registrations for the same service ID:
 
 1. Mode vendor baseline.

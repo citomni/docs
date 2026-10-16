@@ -316,6 +316,8 @@ Deep associative merge, last wins.
 
 ### Reading cfg
 
+The complete behavior and rules are in [Cfg access](../reference/cfg-access.md); this section summarizes them.
+
 A direct read throws `\OutOfBoundsException` at the first missing key, at any depth:
 
 ```php

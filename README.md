@@ -43,7 +43,6 @@ This repository hosts the public documentation for the CitOmni Framework.
 - [how-to/migrate-from-litemysqli-to-db-service.md](./how-to/migrate-from-litemysqli-to-db-service.md)
 - [how-to/providers-build-a-provider.md](./how-to/providers-build-a-provider.md)
 - [how-to/repositories-authoring-and-usage.md](./how-to/repositories-authoring-and-usage.md)
-- [how-to/security-service-csrf-how-to.md](./how-to/security-service-csrf-how-to.md)
 - [how-to/services-authoring-registration-usage.md](./how-to/services-authoring-registration-usage.md)
 - [how-to/uploadRename_usage-guide.md](./how-to/uploadRename_usage-guide.md)
 
@@ -62,6 +61,7 @@ This repository hosts the public documentation for the CitOmni Framework.
 
 ### reference
 - [reference/README.md](./reference/README.md)
+- [reference/cfg-access.md](./reference/cfg-access.md)
 - [reference/flash-service.md](./reference/flash-service.md)
 - [reference/log-service.md](./reference/log-service.md)
 - [reference/router-reference-light.md](./reference/router-reference-light.md)
@@ -158,4 +158,4 @@ Below is the planned layout. Some sections may be empty while we migrate content
 
 ---
 _This README was generated automatically._  
-_Last updated: 2026-10-14 16:32:55_
+_Last updated: 2026-10-16 01:04:49_
