@@ -333,7 +333,7 @@ class StartSleepJobCommand extends BaseCommand {
 	/**
 	 * Declare the command's options.
 	 *
-	 * @return array<string,mixed>  Options seconds, interval-ms and lock-key.
+	 * @return array{arguments?: array<string,array<string,mixed>>, options?: array<string,array<string,mixed>>}  Options seconds, interval-ms and lock-key.
 	 */
 	protected function signature(): array {
 		return [
