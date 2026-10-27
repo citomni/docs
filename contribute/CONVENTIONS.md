@@ -208,7 +208,7 @@ Configuration is assembled for the selected HTTP or CLI mode, from lowest to hig
 3. App common configuration in `config/citomni_cfg.php`, then its mode-specific counterpart.
 4. App common environment overlay, then its mode-specific environment overlay.
 
-Associative config arrays are merged recursively and later values win. List arrays are replaced rather than concatenated. `$app->cfg` exposes the result as a read-only `Cfg` object, with nested associative arrays converted to `Cfg` and lists remaining arrays.
+Associative config arrays are merged recursively and later values win. List arrays are replaced rather than concatenated. An empty array merged into an associative array changes nothing, so a package that ships a map as `[]` for other packages to fill can come before or after them in `config/providers.php`. `$app->cfg` exposes the result as a read-only `Cfg` object, with nested associative arrays converted to `Cfg` and lists remaining arrays.
 
 A direct read raises `OutOfBoundsException` at the first missing key, at any depth. `??` and `isset()` check every node on the path and never throw on a missing key, so they hide it. Choose the form by who owns the path:
 

@@ -227,7 +227,7 @@ Merge rules of `Arr::mergeAssocLastWins()`:
 
 * Associative arrays merge recursively, key by key.
 * Lists are replaced as a whole and never concatenated.
-* Empty values (`''`, `0`, `false`, `null`, `[]`) are valid overrides and win.
+* Empty values (`''`, `0`, `false`, `null`) are valid overrides and win. So is `[]`, except over a non-empty associative array: there it changes nothing, because an empty array is both an empty list and an empty map, and the value it meets decides which. A package that ships a map as `[]` for other packages to fill, such as `upload.profiles` in `citomni/upload` or `jobrunner.handlers` in `citomni/jobrunner`, can therefore come before or after them in `providers.php`.
 * Every source passes through `Arr::normalizeConfig()` first. Objects and `Traversable`s become arrays; enum cases stay enum cases.
 
 `$app->cfg` is read-only. A direct read throws `\OutOfBoundsException` at the first missing key, at any depth. `??` and `isset()` check every node on the path and never throw on a missing key. Own cfg, which the package's Registry ships or the app defines in its own config files, is read directly; app cfg read by a package, another package's cfg, and a path present in one mode only are read with `?? <default>`:
@@ -257,8 +257,8 @@ Dispatch maps use the merge of Section 5.2, so an override merges into the entry
 
 * A later entry with the same path or command name merges into the earlier entry, and keys it omits survive. A provider that sets only `controller` and `action` for `/` keeps the `methods`, `template_file`, and `template_layer` of the `citomni/http` route; an app that sets only `command` for `cache:warm` keeps the `description` of the `citomni/cli` command.
 * Lists such as `methods` are replaced.
-* A whole source that returns `[]` is skipped and never wipes earlier entries.
-* Inside a source, `[]` is an ordinary override and replaces what was merged before it. `'regex' => []` in an app routes file drops every regex route merged before it, including those of providers.
+* A whole source that returns `[]` is skipped and never wipes earlier entries. Inside a source, `[]` follows the rules of Section 5.2, so `'regex' => []` in an app routes file keeps every regex route merged before it.
+* `null` removes an entry of an earlier source: `'/path' => null` a route, `'name' => null` a command, an entry under `'regex'` one placeholder route, and `'regex' => null` every placeholder route. The kernel drops these entries after the last merge, so they are missing from `$app->routes`, `$app->commands` and the cache. A `null` field inside an entry stays as merged.
 * A provider constant or app file that is not an array throws `\RuntimeException`.
 
 The map of the other mode is always empty: `$app->commands` is `[]` in HTTP mode, and `$app->routes` is `[]` in CLI mode.

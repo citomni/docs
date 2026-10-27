@@ -61,7 +61,7 @@ Routes are assembled by the application kernel (`App::buildRoutes()`) at startup
 Merge semantics follow CitOmni's global "**last-wins**" rule:
 - Associative arrays are merged recursively (later keys overwrite earlier ones).
 - Numeric arrays are replaced wholesale.
-- Empty arrays still count as valid overrides.
+- An empty array replaces a list and leaves an associative array, such as `regex`, unchanged.
 
 > Within the provider step, order in /config/providers.php also follows last-wins: routes from later providers overwrite identical path keys from earlier providers.
 
