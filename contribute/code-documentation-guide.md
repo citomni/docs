@@ -33,7 +33,7 @@ Every fact has one home:
 - Framework behavior lives in the framework's PHPDoc.
 - Patterns and teaching live in READMEs and in these docs.
 
-When a fact is missing at its home, add it there instead of repeating it in every caller.
+When a fact is missing at its home, add it there instead of repeating it in every caller. The [CitOmni Documentation Contract](./documentation-contract.md) applies this principle to every layer of documentation, from PHPDoc to citomni/docs.
 
 ### Contract in PHPDoc, rationale inline
 
@@ -318,6 +318,7 @@ Place an explanation, when needed, as a normal comment directly below the divide
 ## Related documents
 
 - [CitOmni Coding & Documentation Conventions](./CONVENTIONS.md)
+- [CitOmni Documentation Contract](./documentation-contract.md)
 - [CitOmni Testing Guide](./testing-guide.md)
 - [PSR-5: PHPDoc (draft)](https://github.com/php-fig/fig-standards/blob/master/proposed/phpdoc.md)
 - [PSR-19: PHPDoc tags (draft)](https://github.com/php-fig/fig-standards/blob/master/proposed/phpdoc-tags.md)

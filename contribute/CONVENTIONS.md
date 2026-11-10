@@ -342,6 +342,8 @@ The [CitOmni Code Documentation Guide](./code-documentation-guide.md) defines ho
 
 Documentation is part of the interface. It should describe **implemented, verified behavior**, especially public methods, configuration, dependencies, failure modes, and operational caveats.
 
+The [CitOmni Documentation Contract](./documentation-contract.md) defines where each kind of documentation lives, what authority it has, and how it stays true.
+
 ### Package READMEs
 
 A package README should act as a **manual**, not a TODO list, changelog, or historical diary. Depending on the package, useful sections include:
@@ -454,6 +456,7 @@ For suspected vulnerabilities, use the private [Security Policy](https://github.
 - [Contributing to CitOmni](https://github.com/citomni/.github/blob/main/CONTRIBUTING.md)
 - [CitOmni Testing Guide](testing-guide.md)
 - [CitOmni Code Documentation Guide](./code-documentation-guide.md)
+- [CitOmni Documentation Contract](./documentation-contract.md)
 - [CitOmni Architecture](../concepts/architecture.md)
 - [Provider Skeleton](https://github.com/citomni/provider-skeleton)
 - [GitHub Pull Request Template](https://github.com/citomni/.github/blob/main/PULL_REQUEST_TEMPLATE.md)

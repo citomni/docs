@@ -20,6 +20,7 @@ They are intended for contributors who need clear rules for authoring, testing, 
 
 - [Code documentation guide](./code-documentation-guide.md)
 - [CONVENTIONS](./CONVENTIONS.md)
+- [Documentation contract](./documentation-contract.md)
 - [Testing guide](./testing-guide.md)
 
 <!-- AUTO-INDEX:END -->

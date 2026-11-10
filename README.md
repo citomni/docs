@@ -22,6 +22,7 @@ This repository hosts the public documentation for the CitOmni Framework.
 - [contribute/README.md](./contribute/README.md)
 - [contribute/code-documentation-guide.md](./contribute/code-documentation-guide.md)
 - [contribute/CONVENTIONS.md](./contribute/CONVENTIONS.md)
+- [contribute/documentation-contract.md](./contribute/documentation-contract.md)
 - [contribute/testing-guide.md](./contribute/testing-guide.md)
 
 ### cookbook
