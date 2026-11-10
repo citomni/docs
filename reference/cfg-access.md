@@ -7,12 +7,13 @@
 ## Document metadata
 
 * **Package:** `citomni/kernel`
-* **Key types:** `CitOmni\Kernel\Cfg`, `CitOmni\Kernel\App`
+* **Sources:** `citomni/kernel`: `src/Cfg.php`, `src/App.php`, `tests/cfg/`
 * **PHP version:** >= 8.5
 * **Audience:** Application developers, provider authors, and framework developers
-* **Status:** Stable, authoritative
+* **Authority:** Binding
 * **Document type:** Reference
-* **Verified by:** `tests/cfg/run.php` in `citomni/kernel`, one case per behavior statement
+* **Verified:** `citomni/kernel@6a62a7a` (2026-11-10)
+* **Verified by:** `tests/cfg/run.php` in `citomni/kernel`: one case per behavior statement, and one per rule with a code form (R2, R5, R6)
 
 ---
 
@@ -226,6 +227,8 @@ php tests/cfg/run.php
 ```
 
 A failing case means that this document and the code disagree. The source shows what happens; correct the document or the code, and keep the case and the statement in step.
+
+R1, R3, R4, R7, and R8 are verified by review, because no test or check decides them for every package. The reviewer checks every cfg read and write in a change against the rule and the decision table in 4.3. R8 is also enforced at runtime: B18-B22 show that every write throws or changes nothing.
 
 ---
 

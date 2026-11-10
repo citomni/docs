@@ -91,7 +91,7 @@ A pass checks a document against a repository by reading the listed paths of tha
 - Each ID states how it is verified:
     - By a test, for observable behavior that a deterministic test can decide. The case in the owning package's suite is named after the ID.
     - By a static check, for structural rules, such as which classes a layer may reference. The check is named after the ID.
-    - By review, for rules that no tool can decide. The rule states what the reviewer checks.
+    - By review, for rules that no test or check decides. The rule states what the reviewer checks.
 - A suite or check that verifies IDs lists them in its README.
 
 ## 8. Snapshots and decisions
